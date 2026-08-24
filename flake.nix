@@ -104,10 +104,12 @@
 
           configurePhase = ''
             export HOME=$TMPDIR
+            export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+            export PNPM_HOME=$TMPDIR/pnpm-home
+            export PATH="$PNPM_HOME/bin:$PATH"
             # Build scripts call `git rev-parse HEAD` for the version stamp;
             # provide a stable answer instead of a sandbox .git.
             mkdir -p $TMPDIR/bin
-            printf '#!/bin/sh\n[ "$1" = rev-parse ] && { echo dsh-flake; exit 0; }\nexec /run/current-system/sw/bin/git "$@"\n' > $TMPDIR/bin/git 2>/dev/null || true
             printf '#!/bin/sh\n[ "$1" = rev-parse ] && { echo 54fbc14a1d; exit 0; }\nexit 1\n' > $TMPDIR/bin/git
             export DSH_CLIENT_COMMIT_HASH=54fbc14a1d
             chmod +x $TMPDIR/bin/git
