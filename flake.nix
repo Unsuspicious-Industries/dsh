@@ -105,7 +105,8 @@
             # provide a stable answer instead of a sandbox .git.
             mkdir -p $TMPDIR/bin
             printf '#!/bin/sh\n[ "$1" = rev-parse ] && { echo dsh-flake; exit 0; }\nexec /run/current-system/sw/bin/git "$@"\n' > $TMPDIR/bin/git 2>/dev/null || true
-            printf '#!/bin/sh\n[ "$1" = rev-parse ] && { echo dsh-flake; exit 0; }\nexit 1\n' > $TMPDIR/bin/git
+            printf '#!/bin/sh\n[ "$1" = rev-parse ] && { echo 54fbc14a1d; exit 0; }\nexit 1\n' > $TMPDIR/bin/git
+            export DSH_CLIENT_COMMIT_HASH=54fbc14a1d
             chmod +x $TMPDIR/bin/git
             export PATH="$TMPDIR/bin:$PATH"
             export NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
