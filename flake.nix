@@ -196,7 +196,7 @@
             # node_modules (including the .pnpm store it symlinks into) under
             # the CLI. Relative symlinks then resolve; anything still dangling
             # afterwards is a leftover from the per-package staging above.
-            tar -xf ${deps}/workspace.tar -C $out/lib/dsh node_modules
+            tar -xf ${deps}/workspace.tar -C $out/lib/dsh ./node_modules
             chmod -R u+w $out/lib/dsh/node_modules
             find $out/lib/dsh -xtype l -delete
           '';
