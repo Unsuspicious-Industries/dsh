@@ -139,6 +139,10 @@
             chmod -R u+w $TMPDIR/store
             export CI=true
             corepack pnpm config set store-dir $TMPDIR/store --global
+            # minimumReleaseAge needs registry metadata; offline there is no
+            # network, so every entry "fails" the age check. The lockfile was
+            # already policy-checked during the online deps build.
+            echo "minimum-release-age=0" >> .npmrc
             corepack pnpm install --frozen-lockfile --offline
           '';
 
