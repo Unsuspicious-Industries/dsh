@@ -176,7 +176,7 @@
               case "$name" in @deepseek-ai/*)
                 target="$out/lib/dsh/node_modules/$name"
                 rm -rf "$target"
-                mkdir -p "$(dirname "$target")"
+                mkdir -p "$target"
                 # Skip per-package node_modules: runtime resolution uses the
                 # root layout, and nested stores are huge.
                 tar -C "$pkgdir" -cf - --exclude=node_modules . | tar -xf - -C "$target"
@@ -188,7 +188,7 @@
               name=$(node -e "console.log(require('./$vendordir/package.json').name)" 2>/dev/null) || continue
               target="$out/lib/dsh/node_modules/$name"
               rm -rf "$target"
-              mkdir -p "$(dirname "$target")"
+              mkdir -p "$target"
               tar -C "$vendordir" -cf - --exclude=node_modules . | tar -xf - -C "$target"
               chmod -R u+w "$target"
             done
