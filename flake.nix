@@ -192,10 +192,12 @@
               tar -C "$vendordir" -cf - --exclude=node_modules . | tar -xf - -C "$target"
               chmod -R u+w "$target"
             done
-            chmod -R u+w $out/lib/dsh
-            # The staged trees carry pnpm's relative symlinks into the build
-            # workspace's .pnpm store; they dangle here. Runtime resolution
-            # uses the staged packages themselves.
+            # Runtime dependencies: lay the workspace's installed root
+            # node_modules (including the .pnpm store it symlinks into) under
+            # the CLI. Relative symlinks then resolve; anything still dangling
+            # afterwards is a leftover from the per-package staging above.
+            tar -xf ${deps}/workspace.tar -C $out/lib/dsh node_modules
+            chmod -R u+w $out/lib/dsh/node_modules
             find $out/lib/dsh -xtype l -delete
           '';
 
