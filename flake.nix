@@ -112,9 +112,14 @@
             export NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
             export SSL_CERT_FILE=$NIX_SSL_CERT_FILE
             export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-            # Overlay the installed workspace (node_modules everywhere) onto
-            # this checkout. Nothing below needs the network ever again.
+            # Overlay the installed workspace (node_modules everywhere), then
+            # restore this checkout's OWN source on top: the tar carries the
+            # tree as of the deps build, which may be older than src.
             tar -xf ${deps}/workspace.tar
+            mkdir -p $TMPDIR/pristine
+            cp -rT . $TMPDIR/pristine
+            rm -rf $TMPDIR/pristine/node_modules
+            tar -C $TMPDIR/pristine -cf - . | tar -xf - -C $PWD
             export COREPACK_HOME=$PWD/node_modules/.corepack-home
             mkdir -p "$COREPACK_HOME"
             # pnpm shim for anything that shells out to it during build.
