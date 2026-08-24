@@ -101,6 +101,13 @@
 
           configurePhase = ''
             export HOME=$TMPDIR
+            # Build scripts call `git rev-parse HEAD` for the version stamp;
+            # provide a stable answer instead of a sandbox .git.
+            mkdir -p $TMPDIR/bin
+            printf '#!/bin/sh\n[ "$1" = rev-parse ] && { echo dsh-flake; exit 0; }\nexec /run/current-system/sw/bin/git "$@"\n' > $TMPDIR/bin/git 2>/dev/null || true
+            printf '#!/bin/sh\n[ "$1" = rev-parse ] && { echo dsh-flake; exit 0; }\nexit 1\n' > $TMPDIR/bin/git
+            chmod +x $TMPDIR/bin/git
+            export PATH="$TMPDIR/bin:$PATH"
             export NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
             export SSL_CERT_FILE=$NIX_SSL_CERT_FILE
             export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
