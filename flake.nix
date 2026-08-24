@@ -133,7 +133,9 @@
           '';
 
           buildPhase = ''
-            corepack pnpm run build
+            # Invoke the build script directly; going through `pnpm run`
+            # re-triggers its deps-status check, which wants to reinstall.
+            ./node_modules/.bin/tsx scripts/build.ts
           '';
 
           installPhase = ''
