@@ -112,6 +112,9 @@
             export NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
             export SSL_CERT_FILE=$NIX_SSL_CERT_FILE
             export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+            # node_modules came pre-installed from the deps layer; stop pnpm
+            # from re-verifying/reinstalling on every run invocation.
+            export npm_config_verify_deps_before_run=false
             # Overlay the installed workspace (node_modules everywhere), then
             # restore this checkout's OWN source on top: the tar carries the
             # tree as of the deps build, which may be older than src.
