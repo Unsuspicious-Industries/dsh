@@ -70,6 +70,10 @@
             corepack prepare $(node -e "console.log(require('./package.json').packageManager)")
             corepack pnpm config set store-dir $TMPDIR/store --global
             corepack pnpm install --frozen-lockfile
+            # Park the corepack cache INSIDE the workspace so it rides
+            # workspace.tar; stage 2 points COREPACK_HOME at it (offline).
+            mkdir -p node_modules/.corepack-home
+            cp -rT $TMPDIR/corepack node_modules/.corepack-home
           '';
 
           installPhase = ''
