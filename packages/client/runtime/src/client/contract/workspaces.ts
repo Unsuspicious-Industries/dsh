@@ -91,4 +91,5 @@ export interface IWorkspaces {
    * @param sessionId - session to archive.
    */
   archiveSession(sessionId: SessionId): Promise<void>
+  deleteSession?(sessionId: SessionId): Promise<void>
 }

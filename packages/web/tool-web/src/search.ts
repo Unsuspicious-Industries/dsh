@@ -363,11 +363,23 @@ export function applyWebSearchTool(
     isConcurrencySafe: () => true,
     async execute(args, exec) {
       const queries = parseSearchArgs(args, maxQueries)
-      const result = await runSearchQueries(ctx, queries, maxResults, exec.signal)
-      return {
-        ...result.content !== undefined ? { content: result.content } : {},
-        sources: result.sources.map(projectSource),
-        truncated: result.truncated,
+      try {
+        const result = await runSearchQueries(ctx, queries, maxResults, exec.signal)
+        return {
+          ...result.content !== undefined ? { content: result.content } : {},
+          sources: result.sources.map(projectSource),
+          truncated: result.truncated,
+        }
+      } catch (error) {
+        // If the search was aborted due to tool timeout, return structured timeout error
+        if (exec.signal.aborted) {
+          return {
+            content: [{ type: 'text', text: `Error: tool call timed out after ${timeoutMs}ms` }],
+            isError: true,
+            error: { message: `tool call timed out after ${timeoutMs}ms`, info: { name: 'ToolTimeoutError', code: 'TOOL_TIMEOUT' } },
+          }
+        }
+        throw error
       }
     },
     presentCall: presentSearchCall,

@@ -231,6 +231,11 @@ export class WorkspaceManager {
     return result
   }
 
+  async deleteSession(sessionId: SessionId): Promise<RpcResult<{ deleted: true }>> {
+    const { result } = await this.api.workspace.deleteSession({ sessionId })
+    return result
+  }
+
   /**
    * Host-frame entry. Non-workspace frames are ignored so the runtime can
    * fan one host stream out to both object managers.

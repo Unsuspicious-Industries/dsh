@@ -6,8 +6,8 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { stat } from 'node:fs/promises'
-import { basename } from 'node:path'
+import { rm, stat } from 'node:fs/promises'
+import { basename, join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
@@ -251,6 +251,37 @@ export class WorkspaceRegistry extends Service {
       }
       const state = this.requireState()
       await this.setState({ ...state, archivedSessionIds: [...state.archivedSessionIds, sessionId] })
+    })
+  }
+
+  /**
+   * Delete a session durably: remove it from every workspace account, from the
+   * archive set, and delete its log directory. The session must exist.
+   * @param sessionId - The session to delete.
+   */
+  async deleteSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      if (!(await this.sessionKnown(sessionId))) {
+        throw new WorkspaceUnknownSessionError(sessionId)
+      }
+      const state = this.requireState()
+      const archivedSessionIds = state.archivedSessionIds.filter(id => id !== sessionId)
+      // Remove from all workspace sessionIds
+      for (const [id, record] of this.requireTable().entries()) {
+        if (record.sessionIds.includes(sessionId)) {
+          const sessionIds = record.sessionIds.filter(sid => sid !== sessionId)
+          await this.requireTable().update(id, r => ({ ...r, sessionIds }))
+        }
+      }
+      await this.setState({ ...state, archivedSessionIds })
+      try {
+        const root = (this.ctx.sessionPersistence as unknown as { config?: { root?: string } })?.config?.root ?? `${process.env.DSH_HOME ?? '/var/lib/dsh'}/sessions`
+        const dir = join(root, sessionId)
+        await rm(dir, { recursive: true, force: true })
+      } catch {}
+      this.headers.delete(sessionId)
+      this.sessionPaths.delete(sessionId)
+      this.invalidSessionPaths.delete(sessionId)
     })
   }
 

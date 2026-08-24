@@ -212,4 +212,13 @@ export class TestWorkspaces implements IWorkspaces {
       draft.archivedSessionIds = [...draft.archivedSessionIds, sessionId]
     })
   }
+
+  async deleteSession(sessionId: SessionId): Promise<void> {
+    this.calls.push({ method: 'deleteSession', args: [sessionId] })
+    const stub = this.stubs.get('deleteSession')
+    if (stub !== undefined) {
+      await (stub(sessionId) as Promise<void>)
+      return
+    }
+  }
 }

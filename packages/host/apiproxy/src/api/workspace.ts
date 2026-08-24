@@ -106,4 +106,11 @@ export interface WorkspaceApi {
    */
   archiveSession(request: RpcRequest<{ sessionId: SessionId }>):
   Promise<RpcResponse<{ archivedSessionIds: SessionId[] }>>
+
+  /**
+   * Deletes a session durably: removes it from every workspace account, from
+   * the archive set, and deletes its log directory. The session must exist.
+   */
+  deleteSession(request: RpcRequest<{ sessionId: SessionId }>):
+  Promise<RpcResponse<{ deleted: true }>>
 }

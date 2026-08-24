@@ -162,11 +162,12 @@ export class FakeApiClient implements IApiClient {
     insertBefore: (payload: unknown) => this.record('workspace.insertBefore', payload, Promise.resolve(ok({
       workspaceIds: [(payload as { workspaceId: WorkspaceId }).workspaceId],
     }))),
-    insertSessionBefore: (payload: unknown) => this.record('workspace.insertSessionBefore', payload, Promise.resolve(ok({
-      workspace: { workspaceId: 'fk-ws' as never, path: '/f/ws', title: 'ws', sessionIds: [], createdAt: '0', updatedAt: '0' },
-    }))),
     archiveSession: (payload: unknown) => this.record('workspace.archiveSession', payload, Promise.resolve(ok({
       archivedSessionIds: [(payload as { sessionId: SessionId }).sessionId],
+    }))),
+    deleteSession: (payload: unknown) => this.record('workspace.deleteSession', payload, Promise.resolve(ok({ deleted: true as const }))),
+    insertSessionBefore: (payload: unknown) => this.record('workspace.insertSessionBefore', payload, Promise.resolve(ok({
+      workspace: { workspaceId: 'fk-ws' as never, path: '/f/ws', title: 'ws', sessionIds: [], createdAt: '0', updatedAt: '0' },
     }))),
   }
 

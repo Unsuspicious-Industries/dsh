@@ -292,6 +292,11 @@ export class WorkspaceRuntime implements IWorkspaces {
     if (!result.ok) throw new Error(`session archive failed: ${result.error.code}: ${result.error.message}`)
   }
 
+  async deleteSession(sessionId: SessionId): Promise<void> {
+    const result = await this.manager.deleteSession(sessionId)
+    if (!result.ok) throw new Error(`session delete failed: ${result.error.code}: ${result.error.message}`)
+  }
+
   /**
    * Move a session within its Workspace's manual order (DOM-insertBefore-like).
    * @param workspaceId - owning workspace.

@@ -478,15 +478,28 @@ export function applyWebFetchTool(ctx: Context, timeoutMs: number, maxOutputChar
     isConcurrencySafe: () => true,
     async execute(args, exec) {
       const input = parseFetchArgs(args)
-      const result = await ctx.web.fetch(
-        { url: input.url },
-        exec.signal,
-      )
-      return {
-        url: result.url,
-        statusCode: result.statusCode,
-        body: { kind: result.body.kind, content: result.body.content },
-        truncated: result.truncated,
+      try {
+        const result = await ctx.web.fetch(
+          { url: input.url },
+          exec.signal,
+        )
+        return {
+          url: result.url,
+          statusCode: result.statusCode,
+          body: { kind: result.body.kind, content: result.body.content },
+          truncated: result.truncated,
+        }
+      } catch (error) {
+        // If the fetch was aborted due to tool timeout, return structured timeout error
+        if (exec.signal.aborted) {
+          return {
+            url: input.url,
+            statusCode: 0,
+            body: { kind: 'error', content: `Error: tool call timed out after ${timeoutMs}ms` },
+            truncated: true,
+          }
+        }
+        throw error
       }
     },
     presentCall: presentFetchCall,
