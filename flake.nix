@@ -82,6 +82,9 @@
             # every level). Stage 2 then builds fully offline - no store
             # reuse, no corepack fetch, no supply-chain policy re-check.
             tar -cf $out/workspace.tar --exclude=.git .
+            # Also ship the pnpm content-addressable store for the offline
+            # reinstall stage 2 needs when it re-verifies node_modules.
+            tar -cf $out/store.tar -C $TMPDIR store
           '';
 
           outputHashMode = "recursive";
@@ -130,6 +133,11 @@
             printf '#!/bin/sh\nexec corepack pnpm "$@"\n' > $TMPDIR/bin/pnpm
             chmod +x $TMPDIR/bin/pnpm
             export PATH="$TMPDIR/bin:$PWD/node_modules/.bin:$PATH"
+            tar -xf ${deps}/store.tar -C $TMPDIR
+            chmod -R u+w $TMPDIR/store
+            export CI=true
+            corepack pnpm config set store-dir $TMPDIR/store --global
+            corepack pnpm install --frozen-lockfile --offline
           '';
 
           buildPhase = ''
