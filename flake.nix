@@ -165,11 +165,15 @@
 
           installPhase = ''
             mkdir -p $out/lib/dsh
-            # Stage what bin.js needs at runtime: the CLI app with its built
-            # lib/, plus every workspace package's lib/ under the same
-            # relative layout, so workspace:* resolution walks real files.
+            # 1. External dependencies: the workspace's installed root
+            #    node_modules (including the .pnpm store its symlinks need).
+            tar -xf ${deps}/workspace.tar -C $out/lib/dsh ./node_modules
+            chmod -R u+w $out/lib/dsh/node_modules
+            # 2. Stage what bin.js needs at runtime: the CLI app with its
+            #    built lib/, plus every built workspace package OVER the
+            #    deps layer's workspace symlinks (which dangle here, since
+            #    ../../packages/*/* does not exist in the bundle).
             cp -rT apps/cli $out/lib/dsh
-            mkdir -p $out/lib/dsh/node_modules/@deepseek-ai
             for pkgdir in packages/*/*/; do
               [ -f "$pkgdir/package.json" ] || continue
               name=$(node -e "console.log(require('./$pkgdir/package.json').name)" 2>/dev/null) || continue
@@ -192,13 +196,8 @@
               tar -C "$vendordir" -cf - --exclude=node_modules . | tar -xf - -C "$target"
               chmod -R u+w "$target"
             done
-            # Runtime dependencies: lay the workspace's installed root
-            # node_modules (including the .pnpm store it symlinks into) under
-            # the CLI. Relative symlinks then resolve; anything still dangling
-            # afterwards is a leftover from the per-package staging above.
-            rm -rf $out/lib/dsh/node_modules
-            tar -xf ${deps}/workspace.tar -C $out/lib/dsh ./node_modules
-            chmod -R u+w $out/lib/dsh/node_modules
+            # 3. Anything still dangling is a leftover pnpm link whose target
+            #    lies outside the bundle; runtime never needs it.
             find $out/lib/dsh -xtype l -delete
           '';
 
