@@ -196,9 +196,31 @@
               tar -C "$vendordir" -cf - --exclude=node_modules . | tar -xf - -C "$target"
               chmod -R u+w "$target"
             done
-            # 3. Anything still dangling is a leftover pnpm link whose target
-            #    lies outside the bundle; runtime never needs it.
-            find $out/lib/dsh -xtype l -delete
+            # 3. Repair pnpm's top-level links: their relative depth assumed
+            #    the repo root, not lib/dsh. Re-point every dangling link at
+            #    its package inside the bundled .pnpm store; delete whatever
+            #    has no store entry (workspace links already replaced above).
+            cd $out/lib/dsh/node_modules
+            find . -maxdepth 3 -xtype l | while read -r link; do
+              name=$(basename "$link")
+              match=$(ls -d ".pnpm/${name}@"*"/node_modules/${name}" 2>/dev/null | head -1)
+              if [ -n "$match" ]; then
+                ln -sf "$match" "$link"
+              else
+                rm -f "$link"
+              fi
+            done
+            # Scoped names (@scope/pkg) keep their directory: handle inside scopes too.
+            for scope in @*/*/; do
+              [ -d "$scope" ] || continue
+              find "$scope" -maxdepth 1 -xtype l | while read -r link; do
+                name=$(basename "$link"); scope_name=$(basename "$(dirname "$link")")
+                full="${scope_name}/${name}"
+                match=$(ls -d ".pnpm/${full}@"*"/node_modules/${full}" 2>/dev/null | head -1)
+                if [ -n "$match" ]; then ln -sf "$match" "$link"; else rm -f "$link"; fi
+              done
+            done
+            cd /build/source 2>/dev/null || true
           '';
 
           passthru = {
