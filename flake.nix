@@ -193,6 +193,10 @@
               chmod -R u+w "$target"
             done
             chmod -R u+w $out/lib/dsh
+            # The staged trees carry pnpm's relative symlinks into the build
+            # workspace's .pnpm store; they dangle here. Runtime resolution
+            # uses the staged packages themselves.
+            find $out/lib/dsh -xtype l -delete
           '';
 
           passthru = {
