@@ -133,6 +133,10 @@
           '';
 
           buildPhase = ''
+            # pnpm 11.7 ignores the npm_config spelling of this setting; an
+            # .npmrc row is the reliable way to stop its auto-install pass.
+            grep -q verify-deps-before-run .npmrc 2>/dev/null || \
+              echo "verify-deps-before-run=false" >> .npmrc
             # Invoke the build script directly; `pnpm run` re-triggers its
             # deps-status check, which wants to reinstall. scripts/pnpm-
             # invocation.ts only needs npm_execpath to find pnpm for any
