@@ -203,7 +203,7 @@
             cd $out/lib/dsh/node_modules
             find . -maxdepth 3 -xtype l | while read -r link; do
               name=$(basename "$link")
-              match=$(ls -d ".pnpm/${name}@"*"/node_modules/${name}" 2>/dev/null | head -1)
+              match=$(ls -d ".pnpm/''${name}@"*"/node_modules/''${name}" 2>/dev/null | head -1)
               if [ -n "$match" ]; then
                 ln -sf "$match" "$link"
               else
@@ -215,8 +215,8 @@
               [ -d "$scope" ] || continue
               find "$scope" -maxdepth 1 -xtype l | while read -r link; do
                 name=$(basename "$link"); scope_name=$(basename "$(dirname "$link")")
-                full="${scope_name}/${name}"
-                match=$(ls -d ".pnpm/${full}@"*"/node_modules/${full}" 2>/dev/null | head -1)
+                full="''${scope_name}/''${name}"
+                match=$(ls -d ".pnpm/''${full}@"*"/node_modules/''${full}" 2>/dev/null | head -1)
                 if [ -n "$match" ]; then ln -sf "$match" "$link"; else rm -f "$link"; fi
               done
             done
