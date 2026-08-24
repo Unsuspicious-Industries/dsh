@@ -120,13 +120,14 @@
             # node_modules came pre-installed from the deps layer; stop pnpm
             # from re-verifying/reinstalling on every run invocation.
             export npm_config_verify_deps_before_run=false
-            # Overlay the installed workspace (node_modules everywhere), then
-            # restore this checkout's OWN source on top: the tar carries the
-            # tree as of the deps build, which may be older than src.
-            tar -xf ${deps}/workspace.tar
+            # Overlay the installed workspace (node_modules everywhere), but
+            # keep THIS checkout's source authoritative: capture the clean
+            # unpacked tree BEFORE the tar lands, then restore everything
+            # except node_modules over the extracted (older) copy.
             mkdir -p $TMPDIR/pristine
             cp -rT . $TMPDIR/pristine
             rm -rf $TMPDIR/pristine/node_modules
+            tar -xf ${deps}/workspace.tar
             tar -C $TMPDIR/pristine -cf - . | tar -xf - -C $PWD
             export COREPACK_HOME=$PWD/node_modules/.corepack-home
             mkdir -p "$COREPACK_HOME"
