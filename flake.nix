@@ -221,6 +221,10 @@
               done
             done
             cd /build/source 2>/dev/null || true
+            # Hoisted .pnpm/node_modules links point at ../../packages/...,
+            # which is not part of the bundle; runtime resolves through the
+            # staged root copies, so every remaining dangler goes.
+            find $out/lib/dsh -xtype l -delete
           '';
 
           passthru = {
