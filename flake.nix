@@ -187,6 +187,18 @@
                 chmod -R u+w "$target"
               ;; esac
             done
+            # native/landlock-run members are workspace packages too and
+            # sandbox-local imports them at runtime.
+            for pkgdir in native/landlock-run/packages/*/; do
+              [ -f "$pkgdir/package.json" ] || continue
+              name=$(node -e "console.log(require('./$pkgdir/package.json').name)" 2>/dev/null) || continue
+              case "$name" in @*/*)
+                target="$out/lib/dsh/node_modules/$name"
+                rm -rf "$target"; mkdir -p "$target"
+                tar -C "$pkgdir" -cf - . | tar -xf - -C "$target"
+                chmod -R u+w "$target"
+              ;; esac
+            done
             for vendordir in vendor/*/; do
               [ -f "$vendordir/package.json" ] || continue
               name=$(node -e "console.log(require('./$vendordir/package.json').name)" 2>/dev/null) || continue
