@@ -177,7 +177,7 @@
             mkdir -p $out/bin
             cat > $out/bin/dsh <<EOF
             #!${pkgs.runtimeShell}
-            exec ${node}/bin/node --expose-internals $out/lib/dsh/apps/cli/lib/bin.js "$@"
+            exec ${node}/bin/node --expose-internals $out/lib/dsh/apps/cli/lib/bin.js "\$@"
             EOF
             chmod +x $out/bin/dsh
           '';
