@@ -190,6 +190,9 @@
         provider: spawn
         toolName: subagent
         backgroundMode: continuable
+        agentOptions:
+          provider: usi
+          model: usi/agentic
 
     - id: tool-subagent-fork
       name: '@deepseek-ai/dsh-tool-subagent'
@@ -197,6 +200,9 @@
         provider: fork
         toolName: subagent_fork
         backgroundMode: continuable
+        agentOptions:
+          provider: usi
+          model: usi/agentic
 
     # Production dsh does not install these optional providers. Install the
     # matching Bundle in this Profile and restart the Host, then copy this
