@@ -223,31 +223,35 @@
               tar -C "$vendordir" -cf - --exclude=node_modules . | tar -xf - -C "$target"
               chmod -R u+w "$target"
             done
-            # 3. Repair pnpm's top-level links: their relative depth assumed
-            #    the repo root, not lib/dsh. Re-point every dangling link at
-            #    its package inside the bundled .pnpm store; delete whatever
-            #    has no store entry (workspace links already replaced above).
-            cd $out/lib/dsh/node_modules
-            find . -maxdepth 3 -xtype l | while read -r link; do
-              name=$(basename "$link")
-              match=$(ls -d ".pnpm/''${name}@"*"/node_modules/''${name}" 2>/dev/null | head -1)
-              if [ -n "$match" ]; then
-                ln -sf "$match" "$link"
-              else
-                rm -f "$link"
+            # 3. Link repair. pnpm's relative links assumed the repo root;
+            #    inside lib/dsh they dangle. For every dangling link anywhere
+            #    under node_modules, re-point it at its package in the
+            #    bundled .pnpm store; workspace-internal packages resolve to
+            #    their staged copy at the bundle root; anything else goes.
+            nm=$out/lib/dsh/node_modules
+            repair_link() {
+              link="$1"
+              base="${link##*node_modules/}"
+              case "$base" in */*) name="${base#*/}";; *) name="$base";; esac
+              esc=$(printf '%s' "$name" | sed 's|@|%40|g; s|/|+|g')
+              m=$(ls -d "$nm/.pnpm/$esc"*/node_modules/"$name" 2>/dev/null | head -1)
+              if [ -n "$m" ]; then
+                d=$(dirname "$link"); mkdir -p "$d"
+                ln -sfn "$(realpath --relative-to="$d" "$m")" "$link"; return 0
               fi
-            done
-            # Scoped names (@scope/pkg) keep their directory: handle inside scopes too.
-            for scope in @*/*/; do
-              [ -d "$scope" ] || continue
-              find "$scope" -maxdepth 1 -xtype l | while read -r link; do
-                name=$(basename "$link"); scope_name=$(basename "$(dirname "$link")")
-                full="''${scope_name}/''${name}"
-                match=$(ls -d ".pnpm/''${full}@"*"/node_modules/''${full}" 2>/dev/null | head -1)
-                if [ -n "$match" ]; then ln -sf "$match" "$link"; else rm -f "$link"; fi
-              done
-            done
-            cd /build/source 2>/dev/null || true
+              case "$name" in @deepseek-ai/*|@earendil-works/*)
+                if [ -d "$nm/$name" ]; then
+                  d=$(dirname "$link"); mkdir -p "$d"
+                  depth=$(awk -F/ '{print NF-1}' <<< "$name")
+                  up=$(printf '../%.0s' $(seq 1 $((depth+1)) 2>/dev/null))
+                  ln -sfn "$up$name" "$link"; return 0
+                fi ;;
+              esac
+              rm -f "$link"
+            }
+            while IFS= read -r -d "" l; do repair_link "$l"; done \
+              < <(find $out/lib/dsh/node_modules -xtype l -print0)
+          '';
             # Hoisted .pnpm/node_modules links point at ../../packages/...,
             # which is not part of the bundle; runtime resolves through the
             # staged root copies, so every remaining dangler goes.
