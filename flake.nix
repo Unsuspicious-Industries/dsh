@@ -231,8 +231,8 @@
             nm=$out/lib/dsh/node_modules
             repair_link() {
               link="$1"
-              base="${link##*node_modules/}"
-              case "$base" in */*) name="${base#*/}";; *) name="$base";; esac
+              base="''${link##*node_modules/}"
+              case "$base" in */*) name="''${base#*/}";; *) name="$base";; esac
               esc=$(printf '%s' "$name" | sed 's|@|%40|g; s|/|+|g')
               m=$(ls -d "$nm/.pnpm/$esc"*/node_modules/"$name" 2>/dev/null | head -1)
               if [ -n "$m" ]; then
@@ -251,11 +251,6 @@
             }
             while IFS= read -r -d "" l; do repair_link "$l"; done \
               < <(find $out/lib/dsh/node_modules -xtype l -print0)
-          '';
-            # Hoisted .pnpm/node_modules links point at ../../packages/...,
-            # which is not part of the bundle; runtime resolves through the
-            # staged root copies, so every remaining dangler goes.
-            find $out/lib/dsh -xtype l -delete
           '';
 
           passthru = {
