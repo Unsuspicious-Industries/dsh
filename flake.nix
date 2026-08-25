@@ -160,6 +160,9 @@
             # invocation.ts only needs npm_execpath to find pnpm for any
             # nested `pnpm <cmd>` calls - point it at the corepack shim.
             export npm_execpath=$PWD/node_modules/.corepack-home/v1/pnpm/11.7.0/bin/pnpm.mjs
+            # The build revision stays available for diagnostics, while the
+            # product surface names this deployment rather than upstream.
+            export DSH_CLIENT_TITLE='Unsuspicious DSH'
             ./node_modules/.bin/tsx scripts/build.ts
             # The web UI's dist is workspace knowledge: build the frontend
             # into apps/web/dist (dsh-web-app resolves it from there).
