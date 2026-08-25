@@ -168,89 +168,18 @@
 
           installPhase = ''
             mkdir -p $out/lib/dsh
-            # 1. External dependencies: the workspace's installed root
-            #    node_modules (including the .pnpm store its symlinks need).
-            tar -xf ${deps}/workspace.tar -C $out/lib/dsh ./node_modules
-            chmod -R u+w $out/lib/dsh/node_modules
-            # 2. Stage what bin.js needs at runtime: the CLI app with its
-            #    built lib/, plus every built workspace package OVER the
-            #    deps layer's workspace symlinks (which dangle here, since
-            #    ../../packages/*/* does not exist in the bundle).
-            cp -rT apps/cli $out/lib/dsh
-            for pkgdir in packages/*/*/; do
-              [ -f "$pkgdir/package.json" ] || continue
-              name=$(node -e "console.log(require('./$pkgdir/package.json').name)" 2>/dev/null) || continue
-              case "$name" in @deepseek-ai/*)
-                target="$out/lib/dsh/node_modules/$name"
-                rm -rf "$target"
-                mkdir -p "$target"
-                # Per-package node_modules stay: they carry this package's
-                # own dep links into the bundled root .pnpm store.
-                tar -C "$pkgdir" -cf - . | tar -xf - -C "$target"
-                chmod -R u+w "$target"
-              ;; esac
-            done
-            # native/landlock-run members are workspace packages too and
-            # sandbox-local imports them at runtime.
-            for pkgdir in native/landlock-run/packages/*/; do
-              [ -f "$pkgdir/package.json" ] || continue
-              name=$(node -e "console.log(require('./$pkgdir/package.json').name)" 2>/dev/null) || continue
-              case "$name" in @*/*)
-                target="$out/lib/dsh/node_modules/$name"
-                rm -rf "$target"; mkdir -p "$target"
-                tar -C "$pkgdir" -cf - . | tar -xf - -C "$target"
-                chmod -R u+w "$target"
-              ;; esac
-            done
-            # The web UI package lives under apps/ and ships the built
-            # frontend dist that dsh-web-app resolves at runtime.
-            for pkgdir in apps/*/; do
-              [ -f "$pkgdir/package.json" ] || continue
-              name=$(node -e "console.log(require('./$pkgdir/package.json').name)" 2>/dev/null) || continue
-              case "$name" in @deepseek-ai/*)
-                target="$out/lib/dsh/node_modules/$name"
-                rm -rf "$target"; mkdir -p "$target"
-                tar -C "$pkgdir" -cf - --exclude=node_modules . | tar -xf - -C "$target"
-                chmod -R u+w "$target"
-              ;; esac
-            done
-            for vendordir in vendor/*/; do
-              [ -f "$vendordir/package.json" ] || continue
-              name=$(node -e "console.log(require('./$vendordir/package.json').name)" 2>/dev/null) || continue
-              target="$out/lib/dsh/node_modules/$name"
-              rm -rf "$target"
-              mkdir -p "$target"
-              tar -C "$vendordir" -cf - --exclude=node_modules . | tar -xf - -C "$target"
-              chmod -R u+w "$target"
-            done
-            # 3. Link repair. pnpm's relative links assumed the repo root;
-            #    inside lib/dsh they dangle. For every dangling link anywhere
-            #    under node_modules, re-point it at its package in the
-            #    bundled .pnpm store; workspace-internal packages resolve to
-            #    their staged copy at the bundle root; anything else goes.
-            nm=$out/lib/dsh/node_modules
-            repair_link() {
-              link="$1"
-              base="''${link##*node_modules/}"
-              case "$base" in */*) name="''${base#*/}";; *) name="$base";; esac
-              esc=$(printf '%s' "$name" | sed 's|@|%40|g; s|/|+|g')
-              m=$(ls -d "$nm/.pnpm/$esc"*/node_modules/"$name" 2>/dev/null | head -1)
-              if [ -n "$m" ]; then
-                d=$(dirname "$link"); mkdir -p "$d"
-                ln -sfn "$(realpath --relative-to="$d" "$m")" "$link"; return 0
-              fi
-              case "$name" in @deepseek-ai/*|@earendil-works/*)
-                if [ -d "$nm/$name" ]; then
-                  d=$(dirname "$link"); mkdir -p "$d"
-                  depth=$(awk -F/ '{print NF-1}' <<< "$name")
-                  up=$(printf '../%.0s' $(seq 1 $((depth+1)) 2>/dev/null))
-                  ln -sfn "$up$name" "$link"; return 0
-                fi ;;
-              esac
-              rm -f "$link"
-            }
-            while IFS= read -r -d "" l; do repair_link "$l"; done \
-              < <(find $out/lib/dsh/node_modules -xtype l -print0)
+            # Keep the full built workspace layout. pnpm's workspace and
+            # .pnpm links are relative to this root; moving selected packages
+            # into one flat node_modules tree broke transitive dependencies
+            # and made dsh-web crash-loop on startup.
+            tar -cf - --exclude=.git . | tar -xf - -C $out/lib/dsh
+            chmod -R u+w $out/lib/dsh
+            mkdir -p $out/bin
+            cat > $out/bin/dsh <<EOF
+            #!${pkgs.runtimeShell}
+            exec ${node}/bin/node --expose-internals $out/lib/dsh/apps/cli/lib/bin.js "$@"
+            EOF
+            chmod +x $out/bin/dsh
           '';
 
           passthru = {
@@ -467,7 +396,7 @@
                 WorkingDirectory = "/workspace";
                 ExecStart = lib.concatStringsSep " \\\n    " (
                   [
-                    ''"${node}/bin/node --expose-internals ${dshPkg}/lib/dsh/lib/bin.js web"''
+                    ''"${dshPkg}/bin/dsh web"''
                     "--host 127.0.0.1 --port 3080"
                     "--trusted-host ${cfg.hostName}"
                   ] ++ map (h: "--trusted-host ${h}") cfg.extraTrustedHosts
