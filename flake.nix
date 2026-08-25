@@ -235,15 +235,6 @@
           syncCreds = pkgs.writeScript "dsh-sync-credentials"
             ("#!${node}/bin/node\n" + lib.removePrefix "#!/usr/bin/env node\n" (builtins.readFile cfg.syncCredentialsScript));
 
-          # Restarts hand off to a transient unit: these scripts run inside
-          # units in dsh-web's Requires= chain, so a synchronous restart
-          # deadlocks (observed live: five hours of 502s).
-          restartTrigger = ''
-            if ${pkgs.systemd}/bin/systemctl is-active --quiet dsh-web.service; then
-              ${pkgs.systemd}/bin/systemd-run --collect --unit=dsh-web-restart-trigger \
-                ${pkgs.systemd}/bin/systemctl try-restart dsh-web.service
-            fi
-          '';
         in
         {
           options.services.usi-dsh = with lib; {
@@ -336,7 +327,7 @@
                   ${pkgs.coreutils}/bin/chown dsh:dsh ${dshHome}/credentials.env
                   if [ -e "$marker" ]; then
                     rm -f "$marker"
-                    ${restartTrigger}
+                    ${pkgs.util-linux}/bin/logger -t dsh-sync "credentials updated; will apply on next dsh-web restart"
                   fi
                 '';
                 # node must be findable: the unit replaces PATH.
@@ -368,7 +359,7 @@
                   ${pkgs.coreutils}/bin/chown dsh:dsh ${dshHome}/settings.yaml
                   if [ -e "$marker" ]; then
                     rm -f "$marker"
-                    ${restartTrigger}
+                    ${pkgs.util-linux}/bin/logger -t dsh-sync "model catalog updated; will apply on next dsh-web restart"
                   fi
                 '';
                 Environment = "PATH=${node}/bin:${pkgs.coreutils}/bin";
