@@ -161,6 +161,9 @@
             # nested `pnpm <cmd>` calls - point it at the corepack shim.
             export npm_execpath=$PWD/node_modules/.corepack-home/v1/pnpm/11.7.0/bin/pnpm.mjs
             ./node_modules/.bin/tsx scripts/build.ts
+            # The web UI's dist is workspace knowledge: build the frontend
+            # into apps/web/dist (dsh-web-app resolves it from there).
+            corepack pnpm run build:web
           '';
 
           installPhase = ''
