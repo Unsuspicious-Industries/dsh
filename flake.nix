@@ -181,9 +181,9 @@
                 target="$out/lib/dsh/node_modules/$name"
                 rm -rf "$target"
                 mkdir -p "$target"
-                # Skip per-package node_modules: runtime resolution uses the
-                # root layout, and nested stores are huge.
-                tar -C "$pkgdir" -cf - --exclude=node_modules . | tar -xf - -C "$target"
+                # Per-package node_modules stay: they carry this package's
+                # own dep links into the bundled root .pnpm store.
+                tar -C "$pkgdir" -cf - . | tar -xf - -C "$target"
                 chmod -R u+w "$target"
               ;; esac
             done
