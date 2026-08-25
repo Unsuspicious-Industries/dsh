@@ -9,7 +9,7 @@
  */
 
 import { createHash, randomBytes } from 'node:crypto'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { mkdir, open } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -25,7 +25,27 @@ let defaultRoot: string | undefined
  * @returns The lazily-created private spill root.
  */
 export function privateRoot(): string {
-  defaultRoot ??= mkdtempSync(join(tmpdir(), 'dsh-spill-'))
+  if (defaultRoot === undefined) {
+    defaultRoot = mkdtempSync(join(tmpdir(), 'dsh-spill-'))
+    // The root is per PROCESS, so without this every `dsh` invocation leaves
+    // one more directory behind forever: 4036 of them had accumulated on
+    // camarade (2026-08-25), most of them empty. Spill data does not outlive
+    // the process that wrote it, so exit is the correct lifetime.
+    //
+    // `process.on('exit')` only runs synchronous work, which is why the
+    // removal is the sync variant. Best-effort by design: a spill root we
+    // cannot remove must never turn a clean shutdown into a crash, and the
+    // tmpfiles sweep is the backstop for whatever this misses (a SIGKILL
+    // never runs a hook at all).
+    const root = defaultRoot
+    process.on('exit', () => {
+      try {
+        rmSync(root, { recursive: true, force: true })
+      } catch {
+        // ignore: see above
+      }
+    })
+  }
   return defaultRoot
 }
 

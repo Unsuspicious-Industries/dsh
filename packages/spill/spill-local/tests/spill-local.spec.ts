@@ -8,7 +8,8 @@
 
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, normalize } from 'node:path'
 import { CallId } from '@deepseek-ai/dsh-llm'
@@ -109,6 +110,21 @@ describe('privateRoot', () => {
     const first = privateRoot()
     expect(isAbsolute(first)).toBe(true)
     expect(privateRoot()).toBe(first)
+  })
+
+  // The root is per PROCESS, so the leak this guards against is only
+  // observable across a real process boundary - an in-process assertion
+  // cannot see it. 4036 of these directories had accumulated on one box
+  // before anyone noticed, most of them empty.
+  it('removes its root when the process exits', () => {
+    const script = [
+      `const { privateRoot } = require(${JSON.stringify(require.resolve('@deepseek-ai/dsh-spill-local'))});`,
+      'process.stdout.write(privateRoot());',
+    ].join('')
+    const root = execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' }).trim()
+    expect(isAbsolute(root)).toBe(true)
+    expect(basename(root).startsWith('dsh-spill-')).toBe(true)
+    expect(existsSync(root)).toBe(false)
   })
 })
 
