@@ -59,11 +59,14 @@ export interface ConnectionConfig {
   trustedHosts?: string[]
   /** Maximum buffered JSON body for every `/api` request. Default: 300 MiB. */
   maxRequestBodyBytes?: number
+  /** Permit host.openPath from a trusted-host deployment protected by an outer auth layer. */
+  allowTrustedHostOpenPath?: boolean
 }
 
 export const Config: z<ConnectionConfig> = z.object({
   trustedHosts: z.array(String).default([]),
   maxRequestBodyBytes: z.natural().min(1).default(DEFAULT_MAX_REQUEST_BODY_BYTES),
+  allowTrustedHostOpenPath: z.boolean().default(false),
 })
 
 /**
@@ -81,6 +84,10 @@ export const Config: z<ConnectionConfig> = z.object({
  * caller chose and reports back the status or the parsed body — an anonymous
  * LAN caller would have a probe for whatever the host can reach and the
  * browser cannot.
+ *
+ * `host.openPath` may be explicitly enabled for a trusted-host deployment that
+ * has authentication in front of this transport. The default remains
+ * loopback-only because trustedHosts is a DNS-rebinding fence, not auth.
  *
  * The model catalog (`llm.providers`, `llm.models`) is deliberately NOT here:
  * it carries provider ids, display names, and model lists — no endpoints,
@@ -106,7 +113,6 @@ const PRIVILEGED_METHODS = new Set([
   'agentPreset.openDocument',
   'agentPreset.remove',
   'host.pickDirectory',
-  'host.openPath',
   'settings.describe',
   'settings.openDocument',
   'settings.update',
@@ -131,6 +137,8 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
   // The Loader resolves schema defaults; hand-built test contexts may pass none.
   const trustedHosts = config?.trustedHosts ?? []
   const maxRequestBodyBytes = config?.maxRequestBodyBytes ?? DEFAULT_MAX_REQUEST_BODY_BYTES
+  const privilegedMethods = new Set(PRIVILEGED_METHODS)
+  if (!(config?.allowTrustedHostOpenPath ?? false)) privilegedMethods.add('host.openPath')
   // Config boundary: a malformed entry fails the load loudly here rather than
   // silently authorizing its hostname prefix at request time.
   for (const entry of trustedHosts) assertTrustedAuthority(entry)
@@ -143,7 +151,7 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
         ? pathname.slice(API_PATH.length + 1)
         : undefined
       if (method !== undefined
-        && PRIVILEGED_METHODS.has(method)
+        && privilegedMethods.has(method)
         && !isTrustedApiRequest(request, [])) {
         return new Response('forbidden', { status: 403 })
       }

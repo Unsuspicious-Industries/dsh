@@ -1,0 +1,3 @@
+name: Sysadmain
+description: NixOS server administration mode with declarative-change discipline, shell, filesystem, planning, compaction, and free subagents.
+order: 3

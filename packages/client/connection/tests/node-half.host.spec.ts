@@ -75,7 +75,7 @@ function fakeResponse(): { response: ServerResponse; state: { status?: number; b
   return { response, state }
 }
 
-async function mounted(config?: { trustedHosts?: string[] }): Promise<{
+async function mounted(config?: { trustedHosts?: string[]; allowTrustedHostOpenPath?: boolean }): Promise<{
   routes: WebRoute[]
   upgrades: WebUpgradeRoute[]
   dispose: () => Promise<void>
@@ -195,6 +195,20 @@ describe('connection node half', () => {
     const read = fakeResponse()
     await routes[0]!.handler(fakeRequest({ host: 'harness.example' }), read.response)
     expect(read.state.status).not.toBe(403)
+    await dispose()
+  })
+
+  it('allows host.openPath for a trusted host when explicitly enabled', async () => {
+    const { routes, dispose } = await mounted({
+      trustedHosts: ['harness.example'],
+      allowTrustedHostOpenPath: true,
+    })
+    const response = fakeResponse()
+    await routes[0]!.handler(
+      fakeRequest({ host: 'harness.example' }, `${API_PATH}/host.openPath`),
+      response.response,
+    )
+    expect(response.state.status).not.toBe(403)
     await dispose()
   })
 

@@ -1,0 +1,122 @@
+# The `sysadmain` preset: a focused NixOS and server administration agent.
+#
+# This keeps the high-value server tools and removes web/search and workflow
+# presentation overhead. The host composition still owns the filesystem,
+# sandbox, approval, persistence, and model route.
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: >-
+      You are Sysadmain, a senior NixOS systems administrator and infrastructure
+      engineer. Work carefully on declarative server configuration, especially
+      Nix flakes and modules under /etc/nixos/servers. Inspect the repository,
+      AGENTS.md, git status, and relevant service definitions before changing
+      anything. Prefer small declarative changes over imperative host edits.
+      Use the existing fleet deployment workflow; do not run raw rebuilds or
+      change running hosts by hand unless the user explicitly requests it.
+      Protect credentials and never print API keys or secret file contents.
+      Validate with targeted tests, nix flake check, nix eval, or a build when
+      appropriate, and clearly distinguish validation from deployment.
+      Preserve unrelated worktree changes.
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 131072
+
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+- id: skills
+  name: cordis:group
+  group: true
+  isolate:
+    skills: true
+  config:
+    - id: skill-filesystem
+      name: '@deepseek-ai/dsh-skill-filesystem'
+
+    - id: tool-skill
+      name: '@deepseek-ai/dsh-tool-skill'
+
+- id: tool-goal
+  name: '@deepseek-ai/dsh-tool-goal'
+
+- id: planning
+  name: cordis:group
+  group: true
+  isolate:
+    planMode: true
+  config:
+    - id: plan-mode
+      name: '@deepseek-ai/dsh-plan-mode'
+      config:
+        section: |
+              You are planning a NixOS or server change. Inspect first and ground every step in the actual flake, module graph, deployment state, and worktree. Do not edit, write, generate, rebuild, deploy, commit, or push while plan mode is active. The plan must name affected files, service dependencies, validation commands, rollback considerations, and whether deployment is required.
+
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+- id: delegation
+  name: cordis:group
+  group: true
+  isolate:
+    workflowEngine: true
+  config:
+    - id: tool-subagent-control
+      name: '@deepseek-ai/dsh-tool-subagent-control'
+
+    - id: tool-subagent-list-agents
+      name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+
+    - id: tool-subagent
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent
+        backgroundMode: continuable
+        agentOptions:
+          provider: usi
+          model: usi/agentic
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true

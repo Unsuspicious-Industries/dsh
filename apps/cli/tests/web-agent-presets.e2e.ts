@@ -216,10 +216,10 @@ describe('the shipped Web composition', () => {
     }
   })
 
-  it('supplies both shipped presets, and only those, from the system root', async () => {
+  it('supplies all shipped presets, and only those, from the system root', async () => {
     const listed = await ctx.agentPresets.list()
 
-    expect(listed.map(preset => preset.id).sort()).toEqual(['code', 'cordis', 'minimal', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual(['code', 'cordis', 'minimal', 'standard', 'sysadmain'])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     expect(ctx.agentPresets.defaultId).toBe('standard')
   })
@@ -241,6 +241,25 @@ describe('the shipped Web composition', () => {
         'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'web_search',
         'workflow', 'write',
       ])
+    } finally {
+      await handle.dispose()
+    }
+  })
+
+  it('composes `sysadmain` with the NixOS operations guidance and focused tools', async () => {
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('preset-sysadmain'),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'sysadmain').then(() => undefined),
+    })
+    try {
+      const assembly = await ctx.systemPrompt.assemble({ scope: handle.agent })
+      expect(assembly.sections.some(section => /NixOS systems administrator/.test(section.text))).toBe(true)
+      const tools = toolNames(ctx, handle.agent)
+      expect(tools).toEqual(expect.arrayContaining([
+        'bash', 'read', 'write', 'glob', 'grep', 'exit_plan_mode', 'todo_write', 'subagent',
+      ]))
+      expect(tools).not.toContain('web_search')
+      expect(tools).not.toContain('workflow')
     } finally {
       await handle.dispose()
     }
