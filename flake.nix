@@ -81,7 +81,11 @@
             # Ship the ENTIRE installed workspace (source + node_modules at
             # every level). Stage 2 then builds fully offline - no store
             # reuse, no corepack fetch, no supply-chain policy re-check.
-            tar -cf $out/workspace.tar --exclude=.git .
+            # The expected output hash is metadata for this derivation, not a
+            # dependency input. Including the hash-control file here makes the
+            # fixed-output hash self-referential: every discovered hash changes
+            # the archive it is supposed to describe.
+            tar -cf $out/workspace.tar --exclude=.git --exclude=nix/deps-hash.txt .
             # Also ship the pnpm content-addressable store for the offline
             # reinstall stage 2 needs when it re-verifies node_modules.
             tar -cf $out/store.tar -C $TMPDIR store
