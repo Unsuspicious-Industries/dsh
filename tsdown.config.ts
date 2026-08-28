@@ -16,8 +16,24 @@ function isBuildFaceClient(value: unknown): boolean {
 export default defineConfig(({ env }) => {
   const client = isBuildFaceClient(env?.DSH_BUILD_FACE)
   if (!client) {
+    const cwd = process.cwd()
+    const isRoot = cwd.endsWith('deepseek-harness') && !cwd.includes('vendor/') && !cwd.includes('packages/')
+    if (isRoot) {
+      return {
+        workspace: ['vendor/*', 'packages/*/*', 'apps/cli'],
+        outDir: 'lib',
+        format: ['esm'],
+        platform: 'node',
+        target: 'es2024',
+        fixedExtension: false,
+        dts: false,
+        clean: false,
+        plugins: [typertPlugin({ mode: 'workspace', faces: ['host'] })],
+      }
+    }
     return {
       workspace: ['vendor/*', 'packages/*/*', 'apps/cli'],
+      entry: ['lib/types/{index,invariant,startup}.js'],
       outDir: 'lib',
       format: ['esm'],
       platform: 'node',
