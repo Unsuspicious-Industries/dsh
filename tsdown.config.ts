@@ -20,7 +20,7 @@ export default defineConfig(({ env }) => {
     const isRoot = cwd.endsWith('deepseek-harness') && !cwd.includes('vendor/') && !cwd.includes('packages/')
     if (isRoot) {
       return {
-        workspace: ['vendor/*', 'packages/*/*', 'apps/cli'],
+        workspace: { include: ['vendor/*', 'packages/*/*', 'apps/cli'], exclude: ['**/lib', '**/lib/**'] },
         outDir: 'lib',
         format: ['esm'],
         platform: 'node',
@@ -32,7 +32,7 @@ export default defineConfig(({ env }) => {
       }
     }
     return {
-      workspace: ['vendor/*', 'packages/*/*', 'apps/cli'],
+      workspace: { include: ['vendor/*', 'packages/*/*', 'apps/cli'], exclude: ['**/lib', '**/lib/**'] },
       entry: ['lib/types/{index,invariant,startup}.js'],
       outDir: 'lib',
       format: ['esm'],
@@ -45,7 +45,7 @@ export default defineConfig(({ env }) => {
     }
   }
   return {
-    workspace: ['vendor/*', 'packages/*/*', 'apps/cli'],
+    workspace: { include: ['vendor/*', 'packages/*/*', 'apps/cli'], exclude: ['**/lib', '**/lib/**'] },
     entry: '',
     outDir: 'lib',
     format: ['esm'],
