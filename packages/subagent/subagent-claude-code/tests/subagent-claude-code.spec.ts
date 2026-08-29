@@ -46,9 +46,11 @@ import {
   claudeQueryOptions,
   consumeClaudeQuery,
   disposeClaudeCodeChild,
+  isFiveHourRateLimitError,
   startClaudeCodeRun,
   successfulResult,
   textTask,
+  withLowPriorityBeta,
   type ClaudeCodeRunSpec,
 } from '../src/run.ts'
 
@@ -1635,5 +1637,204 @@ describe('query and process disposal', () => {
       expect.objectContaining({ message: 'wait boom' }),
     ])
     expect(waitFailure.terminate).toHaveBeenCalledOnce()
+  })
+})
+
+describe('low-priority mode and 5-hour rate-limit fallback', () => {
+  it('appends the low-priority beta without clobbering an existing ANTHROPIC_BETAS', () => {
+    expect(withLowPriorityBeta({ A: '1' })).toEqual({
+      A: '1',
+      ANTHROPIC_BETAS: 'low-priority',
+    })
+    expect(withLowPriorityBeta({ ANTHROPIC_BETAS: 'prompt-caching' }))
+      .toEqual({ ANTHROPIC_BETAS: 'prompt-caching,low-priority' })
+    expect(withLowPriorityBeta({ ANTHROPIC_BETAS: 'low-priority' }))
+      .toEqual({ ANTHROPIC_BETAS: 'low-priority' })
+  })
+
+  it('classifies 5-hour rate limits and rejects short-window limits', () => {
+    expect(isFiveHourRateLimitError([
+      'Rate limit reached for claude-opus-4-… please retry after 5h',
+    ])).toBe(true)
+    expect(isFiveHourRateLimitError([
+      'rate_limit_error: request exceeds the five hour window',
+    ])).toBe(true)
+    expect(isFiveHourRateLimitError([
+      'Rate limit — resets in 5 hours',
+    ])).toBe(true)
+    expect(isFiveHourRateLimitError([
+      'Rate limit reached but recovers in 60s',
+    ])).toBe(false)
+    expect(isFiveHourRateLimitError([
+      'transient tool failure',
+    ])).toBe(false)
+  })
+
+  it('builds options with the low-priority beta only when requested', () => {
+    const off = claudeQueryOptions({
+      cwd: '/workspace',
+      permissionMode: 'dontAsk',
+      env: { ANTHROPIC_API_KEY: 'k' },
+      disposeGraceMs: 17,
+      spawn: () => fakeChild().handle,
+    }, new AbortController(), () => {}, () => {})
+    expect(off.env).not.toHaveProperty('ANTHROPIC_BETAS')
+
+    const on = claudeQueryOptions({
+      cwd: '/workspace',
+      permissionMode: 'dontAsk',
+      env: { ANTHROPIC_API_KEY: 'k' },
+      disposeGraceMs: 17,
+      spawn: () => fakeChild().handle,
+      lowPriority: true,
+    }, new AbortController(), () => {}, () => {})
+    expect(on.env).toMatchObject({
+      ANTHROPIC_API_KEY: 'k',
+      ANTHROPIC_BETAS: 'low-priority',
+    })
+  })
+
+  it('retries once in low-priority mode after a 5-hour rate limit', async () => {
+    const child1 = fakeChild()
+    const child2 = fakeChild()
+    const optionsList: Options[] = []
+    let spawnCall = 0
+    queryMock.mockImplementation(({ options }) => {
+      optionsList.push(options)
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      return optionsList.length === 1
+        ? queryFrom([failure('error_during_execution', [
+          'Rate limit reached for claude-opus-4-… please retry after 5h',
+        ])])
+        : queryFrom([success('low priority answer')])
+    })
+    const onLowPriorityRetry = vi.fn()
+    const spec: ClaudeCodeRunSpec = {
+      cwd: '/workspace',
+      permissionMode: 'dontAsk',
+      env: {},
+      disposeGraceMs: 5,
+      spawn: (spawnSpec) => {
+        void spawnSpec
+        return spawnCall++ === 0 ? child1.handle : child2.handle
+      },
+      onLowPriorityRetry,
+    }
+    const run = await startClaudeCodeRun(request(), spec)
+    await expect(run.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'low priority answer' }],
+      stopReason: 'completed',
+    })
+    expect(optionsList).toHaveLength(2)
+    expect(optionsList[0]!.env!.ANTHROPIC_BETAS ?? '').not.toContain('low-priority')
+    expect(optionsList[1]!.env!.ANTHROPIC_BETAS).toContain('low-priority')
+    expect(onLowPriorityRetry).toHaveBeenCalledOnce()
+    expect(child1.terminate).toHaveBeenCalled()
+    await run.dispose()
+    expect(child2.terminate).toHaveBeenCalled()
+  })
+
+  it('does not fall back for a non-rate-limit failure', async () => {
+    queryMock.mockImplementation(({ options }) => {
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      return queryFrom([failure('error_during_execution', [
+        'transient tool failure',
+      ])])
+    })
+    const onLowPriorityRetry = vi.fn()
+    const spec: ClaudeCodeRunSpec = {
+      cwd: '/workspace',
+      permissionMode: 'dontAsk',
+      env: {},
+      disposeGraceMs: 5,
+      spawn: () => fakeChild().handle,
+      onLowPriorityRetry,
+    }
+    const run = await startClaudeCodeRun(request(), spec)
+    await expect(run.result).resolves.toEqual({
+      output: [],
+      diagnostic: expectedFailureDiagnostic('query-run', 'error_during_execution'),
+      stopReason: 'error',
+    })
+    expect(onLowPriorityRetry).not.toHaveBeenCalled()
+    await run.dispose()
+  })
+
+  it('does not fall back when lowPriorityOnRateLimit is disabled', async () => {
+    queryMock.mockImplementation(({ options }) => {
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      return queryFrom([failure('error_during_execution', [
+        'Rate limit reached for claude-opus-4-… please retry after 5h',
+      ])])
+    })
+    const onLowPriorityRetry = vi.fn()
+    const spec: ClaudeCodeRunSpec = {
+      cwd: '/workspace',
+      permissionMode: 'dontAsk',
+      env: {},
+      disposeGraceMs: 5,
+      spawn: () => fakeChild().handle,
+      lowPriorityOnRateLimit: false,
+      onLowPriorityRetry,
+    }
+    const run = await startClaudeCodeRun(request(), spec)
+    await expect(run.result).resolves.toEqual({
+      output: [],
+      diagnostic: expectedFailureDiagnostic('query-run', 'rate_limit'),
+      stopReason: 'error',
+    })
+    expect(onLowPriorityRetry).not.toHaveBeenCalled()
+    await run.dispose()
+  })
+
+  it('does not loop when the low-priority retry also hits a rate limit', async () => {
+    queryMock.mockImplementation(({ options }) => {
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      return queryFrom([failure('error_during_execution', [
+        'Rate limit reached for claude-opus-4-… please retry after 5h',
+      ])])
+    })
+    const onLowPriorityRetry = vi.fn()
+    const spec: ClaudeCodeRunSpec = {
+      cwd: '/workspace',
+      permissionMode: 'dontAsk',
+      env: {},
+      disposeGraceMs: 5,
+      spawn: () => fakeChild().handle,
+      onLowPriorityRetry,
+    }
+    const run = await startClaudeCodeRun(request(), spec)
+    await expect(run.result).resolves.toEqual({
+      output: [],
+      diagnostic: expectedFailureDiagnostic('query-run', 'rate_limit'),
+      stopReason: 'error',
+    })
+    expect(onLowPriorityRetry).toHaveBeenCalledOnce()
+    await run.dispose()
+  })
+
+  it('runs the first attempt in low-priority mode when always on', async () => {
+    const optionsList: Options[] = []
+    queryMock.mockImplementation(({ options }) => {
+      optionsList.push(options)
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      return queryFrom([success('answer')])
+    })
+    const spec: ClaudeCodeRunSpec = {
+      cwd: '/workspace',
+      permissionMode: 'dontAsk',
+      env: {},
+      disposeGraceMs: 5,
+      spawn: () => fakeChild().handle,
+      lowPriority: true,
+    }
+    const run = await startClaudeCodeRun(request(), spec)
+    await expect(run.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'answer' }],
+      stopReason: 'completed',
+    })
+    expect(optionsList).toHaveLength(1)
+    expect(optionsList[0]!.env!.ANTHROPIC_BETAS).toContain('low-priority')
+    await run.dispose()
   })
 })

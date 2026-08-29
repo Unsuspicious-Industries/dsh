@@ -71,7 +71,52 @@ type ClaudeCodeFailureCategory =
   | 'invalid-success'
   | 'missing-result'
   | 'process-exit'
+  | 'rate_limit'
   | 'unknown'
+
+/** Beta token that routes Claude Code to spare capacity at lower priority. */
+export const LOW_PRIORITY_BETA = 'low-priority'
+
+const RATE_LIMIT_PHRASE = /\brate[ _-]?limit/i
+const FIVE_HOUR_WINDOW =
+  /5\s*(?:h|hr|hours?)\b|300\s*min|five[\s-]?hour|resets?\s+in\s+5\b/i
+const SHORT_WINDOW =
+  /\b(?:per[ -]?(?:minute|second|hour)|1\s*min|60\s*s(?:ec)?|seconds?|minutes?)\b/i
+
+/**
+ * Classify an SDK error payload as a 5-hour (persistent) rate limit.
+ *
+ * Claude Code already retries short-window limits (per-minute, per-second)
+ * internally, so by the time DSH observes a `rate_limit_error` it is the
+ * persistent 5-hour window. We therefore match any rate-limit text that does
+ * not explicitly name a short window, and always match an explicit 5-hour
+ * marker.
+ */
+export function isFiveHourRateLimitError(errors: readonly string[]): boolean {
+  const text = errors.join(' ').toLowerCase()
+  if (!RATE_LIMIT_PHRASE.test(text)) return false
+  if (FIVE_HOUR_WINDOW.test(text)) return true
+  return !SHORT_WINDOW.test(text)
+}
+
+/**
+ * Append the `low-priority` beta to the CLI environment without clobbering an
+ * existing `ANTHROPIC_BETAS` list. Low-priority routing is the documented
+ * remedy when a 5-hour rate limit is hit.
+ */
+export function withLowPriorityBeta(
+  env: Record<string, string>,
+): Record<string, string> {
+  const existing = env['ANTHROPIC_BETAS']
+  const betas = new Set(
+    (existing ?? '')
+      .split(',')
+      .map(value => value.trim())
+      .filter(Boolean),
+  )
+  betas.add(LOW_PRIORITY_BETA)
+  return { ...env, ANTHROPIC_BETAS: [...betas].join(',') }
+}
 
 interface ClaudeCodeFailureFacts {
   readonly stage: ClaudeCodeFailureStage
@@ -160,6 +205,12 @@ export interface ClaudeCodeRunSpec {
   readonly spawn: (spec: SubprocessSpawnSpec) => SubprocessHandle
   /** Host diagnostic sink for a product failure kept outside model-visible text. */
   readonly onError?: (error: Error, stopReason: SubagentStopReason) => void
+  /** Run the CLI with the `low-priority` beta (spare-capacity routing). */
+  readonly lowPriority?: boolean
+  /** Retry once in low-priority mode after a 5-hour rate limit (default true). */
+  readonly lowPriorityOnRateLimit?: boolean
+  /** Host sink invoked when a 5-hour rate limit triggers the low-priority retry. */
+  readonly onLowPriorityRetry?: (error: Error) => void
 }
 
 function thrown(value: unknown): Error {
@@ -203,7 +254,9 @@ export function textTask(prompt: readonly ContentBlock[]): string {
  */
 export function successfulResult(message: SDKResultMessage): string {
   if (message.subtype !== 'success') {
-    const category = sdkFailureCategory(message.subtype)
+    const category = isFiveHourRateLimitError(message.errors)
+      ? 'rate_limit'
+      : sdkFailureCategory(message.subtype)
     const detail = category === 'unknown'
       ? undefined
       : message.errors.join('; ')
@@ -318,7 +371,10 @@ export function claudeQueryOptions(
   return {
     abortController: controller,
     cwd: spec.cwd,
-    env: { ...scrubbedParentEnv(), ...spec.env },
+    env: {
+      ...scrubbedParentEnv(),
+      ...(spec.lowPriority ? withLowPriorityBeta(spec.env) : spec.env),
+    },
     persistSession: false,
     disallowedTools: spec.permissionMode === 'plan'
       ? ['AskUserQuestion', 'ExitPlanMode']
@@ -403,6 +459,7 @@ export async function startClaudeCodeRun(
   let query: Query | undefined
   let managedProcess: ManagedClaudeCodeProcess | undefined
   let diagnostic: string | undefined
+  let lowPriorityActive = spec.lowPriority === true
   const capturePermissionDiagnostic = (value: string): void => {
     diagnostic = value
   }
@@ -419,21 +476,28 @@ export async function startClaudeCodeRun(
     child = captured
     managedProcess = process
   }
-  try {
-    query = officialQuery({
+  const beginAttempt = (lowPriority: boolean): Query => {
+    const attemptQuery = officialQuery({
       prompt,
       options: claudeQueryOptions(
-        spec,
+        { ...spec, lowPriority },
         controller,
         captureChild,
         capturePermissionDiagnostic,
       ),
     })
+    // Assign before the child check so startup teardown can close the query
+    // even when the SDK publishes no controllable process.
+    query = attemptQuery
     if (child === undefined || child.pid <= 0) {
       throw new Error(
         'subagent-claude-code: official SDK did not publish a controllable Claude Code process',
       )
     }
+    return attemptQuery
+  }
+  try {
+    query = beginAttempt(spec.lowPriority === true)
     if (controller.signal.aborted) {
       throw new Error('subagent-claude-code: request was aborted before SDK startup')
     }
@@ -526,23 +590,47 @@ export async function startClaudeCodeRun(
     throw failure
   }
 
-  const publishedQuery = query
-  const publishedChild = child
+  let publishedQuery = query
+  let publishedChild = child as SubprocessHandle
   let receivedResult = false
+  const onPermissionDenied = (): void => {
+    capturePermissionDiagnostic(unattendedDiagnostic(
+      spec.permissionMode,
+      'tool permission',
+      'denied',
+      'Claude Code denied the request before an interactive prompt',
+    ))
+  }
+  const onResult = (): void => { receivedResult = true }
   const result = settleRunResult({
     attempt: async () => {
       try {
-        return await consumeClaudeQuery(publishedQuery, () => {
-          capturePermissionDiagnostic(unattendedDiagnostic(
-            spec.permissionMode,
-            'tool permission',
-            'denied',
-            'Claude Code denied the request before an interactive prompt',
-          ))
-        }, () => {
-          receivedResult = true
-        })
+        return await consumeClaudeQuery(publishedQuery, onPermissionDenied, onResult)
       } catch (error: unknown) {
+        // A 5-hour rate limit is persistent: Claude Code already retried its
+        // own short-window limits, so fall back to low-priority once.
+        if (
+          spec.lowPriorityOnRateLimit !== false
+          && !lowPriorityActive
+          && error instanceof ClaudeCodeFailure
+          && error.facts.category === 'rate_limit'
+        ) {
+          lowPriorityActive = true
+          spec.onLowPriorityRetry?.(error)
+          try {
+            await disposeClaudeCodeChild(publishedQuery, publishedChild)
+          } catch {
+            // Best-effort teardown of the rate-limited first attempt.
+          }
+          const retryQuery = beginAttempt(true)
+          publishedQuery = retryQuery
+          publishedChild = child as SubprocessHandle
+          try {
+            return await consumeClaudeQuery(retryQuery, onPermissionDenied, onResult)
+          } catch (retryError: unknown) {
+            error = retryError
+          }
+        }
         const processOutcome = managedProcess?.outcome
         let facts: ClaudeCodeFailureFacts
         if (error instanceof ClaudeCodeFailure) {

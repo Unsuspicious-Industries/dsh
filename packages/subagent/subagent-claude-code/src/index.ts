@@ -52,6 +52,10 @@ export interface Config {
   permissionMode?: ClaudeCodePermissionMode
   /** Grace in milliseconds for Claude Code process-tree termination. */
   disposeGraceMs?: number
+  /** Run every Claude Code invocation in low-priority (spare-capacity) mode. */
+  lowPriority?: boolean
+  /** Retry once in low-priority mode after a 5-hour rate limit (default true). */
+  lowPriorityOnRateLimit?: boolean
 }
 
 export const Config: z<Config> = z.object({
@@ -60,6 +64,8 @@ export const Config: z<Config> = z.object({
   permissionMode: z.union([...CLAUDE_CODE_PERMISSION_MODES])
     .default(DEFAULT_CLAUDE_CODE_PERMISSION_MODE),
   disposeGraceMs: z.number().default(DEFAULT_DISPOSE_GRACE_MS),
+  lowPriority: z.boolean().default(false),
+  lowPriorityOnRateLimit: z.boolean().default(true),
 })
 
 type ResolvedConfig = Required<Config>
@@ -109,10 +115,18 @@ class ClaudeCodeProvider implements SubagentProvider {
       permissionMode: this.config.permissionMode,
       env: this.config.env,
       disposeGraceMs: this.config.disposeGraceMs,
+      lowPriority: this.config.lowPriority,
+      lowPriorityOnRateLimit: this.config.lowPriorityOnRateLimit,
       spawn: spawnSpec => this.ctx.subprocess.spawn(spawnSpec),
       onError: (error, stopReason) => {
         this.ctx.logger.warn(
           `subagent-claude-code "${this.name}": child run failed (${stopReason}): %o`,
+          error,
+        )
+      },
+      onLowPriorityRetry: (error) => {
+        this.ctx.logger.info(
+          `subagent-claude-code "${this.name}": 5-hour rate limit hit — retrying in low-priority mode: %o`,
           error,
         )
       },
@@ -132,6 +146,8 @@ export function apply(ctx: Context, config: Config): void {
     env: config.env as Record<string, string>,
     permissionMode: config.permissionMode ?? DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
     disposeGraceMs: config.disposeGraceMs as number,
+    lowPriority: config.lowPriority ?? false,
+    lowPriorityOnRateLimit: config.lowPriorityOnRateLimit ?? true,
   }
   assertPositiveFinite(
     'subagent-claude-code',
