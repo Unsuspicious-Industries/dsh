@@ -21,7 +21,7 @@ export const Config: z<Config> = z.object({
   requestTimeoutMs: z.number().min(100).max(30_000).default(5_000),
 })
 
-type SnapshotEndpoint = 'dsh' | 'metrics' | 'units' | 'repo' | 'deploy' | 'tunnel' | 'workloads' | 'nix' | 'sync'
+type SnapshotEndpoint = 'dsh' | 'metrics' | 'units' | 'repo' | 'deploy' | 'tunnel' | 'ssh' | 'workloads' | 'nix' | 'sync'
 
 function tool<T extends ToolDefinition>(definition: T): T { return definition }
 
@@ -45,7 +45,7 @@ function client(config: Config) {
 
   return {
     snapshot: async () => {
-      const paths: SnapshotEndpoint[] = ['dsh', 'metrics', 'units', 'repo', 'deploy', 'tunnel', 'workloads', 'nix', 'sync']
+      const paths: SnapshotEndpoint[] = ['dsh', 'metrics', 'units', 'repo', 'deploy', 'tunnel', 'ssh', 'workloads', 'nix', 'sync']
       const results = await Promise.all(paths.map(async (path) => {
         try { return [path, await request(path)] as const }
         catch (error) { return [path, { error: error instanceof Error ? error.message : String(error) }] as const }
