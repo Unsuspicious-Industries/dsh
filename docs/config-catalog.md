@@ -2308,7 +2308,7 @@ export interface Config {
   cwd?: string
   /** Provider route the child runtime initializes with (default `deepseek-official`). */
   provider: string
-  /** Model the child runtime initializes with (default `deepseek-v4-flash`). */
+  /** Model the child runtime initializes with (default `deepseek-flash`). */
   model: string
   /** Optional per-request output-token cap for the child runtime. */
   maxTokens?: number
@@ -3127,7 +3127,7 @@ export interface Config {
   apiKeyEnv?: string
   /** Anthropic-compatible endpoint base; `/messages` is appended. */
   baseURL?: string
-  /** Anthropic-format model name. Defaults to `deepseek-v4-flash`. */
+  /** Anthropic-format model name. Defaults to `deepseek-flash`. */
   model?: string
   /** `anthropic-version` header value. Defaults to `2023-06-01`. */
   apiVersion?: string

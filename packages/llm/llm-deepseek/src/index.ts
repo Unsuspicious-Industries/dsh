@@ -81,11 +81,16 @@ const DEFAULT_API_KEY_ENV = 'DEEPSEEK_API_KEY'
 const PROVIDER = 'deepseek-official'
 
 const DEFAULT_MODELS: DeepSeekCatalogModel[] = [
-  { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', contextWindow: DEFAULT_CONTEXT_WINDOW },
+  { id: 'deepseek-flash', name: 'DeepSeek-V4.1-Flash', contextWindow: DEFAULT_CONTEXT_WINDOW },
   { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', contextWindow: DEFAULT_CONTEXT_WINDOW },
+  // Retired aliases: the provider still accepts these ids and serves them from
+  // DeepSeek-V4.1-Flash at the Flash price, so they stay listed for sessions
+  // and saved selections that already name them rather than silently dropping
+  // out of discovery.
+  { id: 'deepseek-v4-flash', name: 'DeepSeek-V4.1-Flash (legacy id)', contextWindow: DEFAULT_CONTEXT_WINDOW },
   {
     id: 'deepseek-v4-flash-vision-exp',
-    name: 'DeepSeek-V4-Flash-Vision-Exp',
+    name: 'DeepSeek-V4.1-Flash (legacy vision id)',
     contextWindow: DEFAULT_CONTEXT_WINDOW,
     inputModalities: ['text', 'image'],
     imagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
@@ -116,7 +121,7 @@ export interface Config {
   maxTokens?: number
   /** Positive context capacity used when the selected model has no exact value (default 1,000,000). */
   defaultContextWindow?: number
-  /** Advisory models shown by discovery consumers; defaults to V4 Flash, V4 Pro, and V4 Flash Vision Exp. */
+  /** Advisory models shown by discovery consumers; defaults to V4.1 Flash, V4 Pro, and the two retired V4 Flash ids. */
   models?: DeepSeekCatalogModel[]
   /** Maximum provider idle time while one stream read is outstanding (default five minutes). */
   streamIdleTimeoutMs?: number

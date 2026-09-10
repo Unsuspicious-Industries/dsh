@@ -50,7 +50,7 @@ export interface Config {
   apiKeyEnv?: string
   /** Anthropic-compatible endpoint base; `/messages` is appended. */
   baseURL?: string
-  /** Anthropic-format model name. Defaults to `deepseek-v4-flash`. */
+  /** Anthropic-format model name. Defaults to `deepseek-flash`. */
   model?: string
   /** `anthropic-version` header value. Defaults to `2023-06-01`. */
   apiVersion?: string
