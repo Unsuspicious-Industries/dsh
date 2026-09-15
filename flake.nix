@@ -44,65 +44,17 @@
         # Fixed-output because the install needs the network; the hash is
         # the ONLY thing downstream pins, so an unchanged lockfile means
         # this layer (and everything after it) comes from cache.
-        deps = pkgs.stdenv.mkDerivation {
+        deps = pkgs.fetchPnpmDeps {
           pname = "dsh-deps";
           version = "0.1.1-rc.2";
-          inherit src;
-
-          nativeBuildInputs = [ node pkgs.cacert ];
-
-          impureEnvVars = pkgs.lib.fetchers.proxyImpureEnvVars ++ [
-            "NIX_SSL_CERT_FILE" "SSL_CERT_FILE" "npm_config_fetch_retries"
-          ];
-
-          dontPatchShebangs = true;
-
-          buildPhase = ''
-            export HOME=$TMPDIR
-            export NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
-            export SSL_CERT_FILE=$NIX_SSL_CERT_FILE
-            export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-            # corepack resolves the packageManager-pinned pnpm (11.7.0) from
-            # package.json; its store goes under $out so stage 2 reuses it.
-            export PNPM_HOME=$TMPDIR/pnpm-home
-            export PATH="$PNPM_HOME/bin:$PATH"
-            export COREPACK_HOME=$TMPDIR/corepack
-            corepack prepare $(node -e "console.log(require('./package.json').packageManager)")
-            corepack pnpm config set store-dir $TMPDIR/store --global
-            corepack pnpm install --frozen-lockfile
-            # Park the corepack cache INSIDE the workspace so it rides
-            # workspace.tar; stage 2 points COREPACK_HOME at it (offline).
-            mkdir -p node_modules/.corepack-home
-            cp -rT $TMPDIR/corepack node_modules/.corepack-home
-          '';
-
-          installPhase = ''
-            mkdir -p $out
-            # Ship the ENTIRE installed workspace (source + node_modules at
-            # every level). Stage 2 then builds fully offline - no store
-            # reuse, no corepack fetch, no supply-chain policy re-check.
-            # The expected output hash is metadata for this derivation, not a
-            # dependency input. Including the hash-control file here makes the
-            # fixed-output hash self-referential: every discovered hash changes
-            # the archive it is supposed to describe.
-            #
-            # Both archives carry fixed metadata. node_modules and the pnpm
-            # store are created by this build, so their real mtimes, owners,
-            # and extended attributes differ on every run; a plain tar records
-            # those and the fixed-output hash can never be pinned.
-            tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
-              --no-acls --no-selinux --no-xattrs \
-              -cf $out/workspace.tar --exclude=.git --exclude=nix/deps-hash.txt .
-            # Also ship the pnpm content-addressable store for the offline
-            # reinstall stage 2 needs when it re-verifies node_modules.
-            tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
-              --no-acls --no-selinux --no-xattrs \
-              -cf $out/store.tar -C $TMPDIR store
-          '';
-
-          outputHashMode = "recursive";
-          outputHashAlgo = "sha256";
-          outputHash = builtins.readFile ./nix/deps-hash.txt;
+          src = self;
+          # pnpm 11 rejects fetcher version 3 outright; 4 dumps the store's
+          # SQLite index to SQL text so the hash does not depend on its binary
+          # layout (nixpkgs#522703). Its fixup phase also deletes pnpm's
+          # per-file `checkedAt` timestamps and archives with SOURCE_DATE_EPOCH
+          # mtimes, so the fixed-output hash is pinnable.
+          fetcherVersion = 4;
+          hash = builtins.readFile ./nix/deps-hash.txt;
         };
       in
       rec {
@@ -111,7 +63,7 @@
           version = "0.1.1-rc.2";
           inherit src;
 
-          nativeBuildInputs = [ node pkgs.cacert pkgs.git ];
+          nativeBuildInputs = [ node pkgs.cacert pkgs.git pkgs.pnpm pkgs.sqlite pkgs.zstd ];
 
           dontPatchShebangs = true;
 
@@ -130,29 +82,23 @@
             export NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
             export SSL_CERT_FILE=$NIX_SSL_CERT_FILE
             export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-            # node_modules came pre-installed from the deps layer; stop pnpm
-            # from re-verifying/reinstalling on every run invocation.
+            # stop pnpm re-verifying/reinstalling on every run invocation.
             export npm_config_verify_deps_before_run=false
-            # Overlay the installed workspace (node_modules everywhere), but
-            # keep THIS checkout's source authoritative: capture the clean
-            # unpacked tree BEFORE the tar lands, then restore everything
-            # except node_modules over the extracted (older) copy.
-            mkdir -p $TMPDIR/pristine
-            cp -rT . $TMPDIR/pristine
-            rm -rf $TMPDIR/pristine/node_modules
-            tar -xf ${deps}/workspace.tar
-            tar -C $TMPDIR/pristine -cf - . | tar -xf - -C $PWD
-            export COREPACK_HOME=$PWD/node_modules/.corepack-home
-            mkdir -p "$COREPACK_HOME"
-            # pnpm shim for anything that shells out to it during build.
-            mkdir -p $TMPDIR/bin
-            printf '#!/bin/sh\nexec corepack pnpm "$@"\n' > $TMPDIR/bin/pnpm
-            chmod +x $TMPDIR/bin/pnpm
-            export PATH="$TMPDIR/bin:$PWD/node_modules/.bin:$PATH"
-            tar -xf ${deps}/store.tar -C $TMPDIR
+            # The deps layer ships a pnpm store tarball, not an installed
+            # workspace: this stage materializes node_modules itself, fully
+            # offline, from the pinned store.
+            mkdir -p $TMPDIR/store
+            tar --zstd -xf ${deps}/pnpm-store.tar.zst -C $TMPDIR/store
+            # Fetcher version 4 stores the v11 index as SQL text because the
+            # binary form is not reproducible (nixpkgs#522703); rebuild the
+            # index file pnpm reads.
+            if [ -f $TMPDIR/store/v11/index.db.sql ]; then
+              sqlite3 $TMPDIR/store/v11/index.db < $TMPDIR/store/v11/index.db.sql
+            fi
             chmod -R u+w $TMPDIR/store
+            export PATH="$PWD/node_modules/.bin:$PATH"
             export CI=true
-            corepack pnpm config set store-dir $TMPDIR/store --global
+            pnpm config set store-dir $TMPDIR/store --global
             # minimumReleaseAge needs registry metadata; offline there is no
             # network, so every entry "fails" the age check. The lockfile was
             # already policy-checked during the online deps build. The
@@ -160,7 +106,7 @@
             # so neutralise it there.
             grep -q '^minimumReleaseAge:' pnpm-workspace.yaml || \
               echo 'minimumReleaseAge: 0' >> pnpm-workspace.yaml
-            corepack pnpm install --frozen-lockfile --offline
+            pnpm install --frozen-lockfile --offline
           '';
 
           buildPhase = ''
@@ -171,8 +117,9 @@
             # Invoke the build script directly; `pnpm run` re-triggers its
             # deps-status check, which wants to reinstall. scripts/pnpm-
             # invocation.ts only needs npm_execpath to find pnpm for any
-            # nested `pnpm <cmd>` calls - point it at the corepack shim.
-            export npm_execpath=$PWD/node_modules/.corepack-home/v1/pnpm/11.7.0/bin/pnpm.mjs
+            # nested `pnpm <cmd>` calls - resolve it to the nixpkgs pnpm the
+            # store was fetched with.
+            export npm_execpath=$(readlink -f $(command -v pnpm))
             # The build revision stays available for diagnostics, while the
             # product surface names this deployment rather than upstream.
             export DSH_CLIENT_TITLE='Unsuspicious DSH'
