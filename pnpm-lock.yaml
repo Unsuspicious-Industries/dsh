@@ -1416,6 +1416,9 @@ importers:
       '@deepseek-ai/dsh-file-reference-local':
         specifier: workspace:^
         version: link:../../context/file-reference-local
+      '@deepseek-ai/dsh-grid5000':
+        specifier: workspace:^
+        version: link:../../extensions/grid5000
       '@deepseek-ai/dsh-host-apiproxy':
         specifier: workspace:^
         version: link:../../host/apiproxy
@@ -1437,18 +1440,6 @@ importers:
       '@deepseek-ai/dsh-host-webserver':
         specifier: workspace:^
         version: link:../../host/webserver
-      '@deepseek-ai/dsh-grid5000':
-        specifier: workspace:^
-        version: link:../../extensions/grid5000
-      '@deepseek-ai/dsh-ssh':
-        specifier: workspace:^
-        version: link:../../extensions/ssh
-      '@deepseek-ai/dsh-status':
-        specifier: workspace:^
-        version: link:../../extensions/status
-      '@deepseek-ai/dsh-subagent-ssh':
-        specifier: workspace:^
-        version: link:../../subagent/subagent-ssh
       '@deepseek-ai/dsh-launch-environment':
         specifier: workspace:^
         version: link:../../util/launch-environment
@@ -1467,6 +1458,12 @@ importers:
       '@deepseek-ai/dsh-session-stats':
         specifier: workspace:^
         version: link:../../session/session-stats
+      '@deepseek-ai/dsh-ssh':
+        specifier: workspace:^
+        version: link:../../extensions/ssh
+      '@deepseek-ai/dsh-status':
+        specifier: workspace:^
+        version: link:../../extensions/status
       '@deepseek-ai/dsh-storage':
         specifier: workspace:^
         version: link:../../storage/storage
@@ -1476,6 +1473,9 @@ importers:
       '@deepseek-ai/dsh-storage-json':
         specifier: workspace:^
         version: link:../../storage/storage-json
+      '@deepseek-ai/dsh-subagent-ssh':
+        specifier: workspace:^
+        version: link:../../subagent/subagent-ssh
       '@deepseek-ai/dsh-subprocess':
         specifier: workspace:^
         version: link:../../subprocess/subprocess
@@ -4310,25 +4310,6 @@ importers:
         specifier: workspace:^
         version: link:../../core/tools
 
-  packages/extensions/status:
-    dependencies:
-      '@deepseek-ai/schemastery':
-        specifier: link:../../../vendor/schemastery
-        version: link:../../../vendor/schemastery
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:^
-        version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-invariants':
-        specifier: workspace:^
-        version: link:../../runtime-diagnostics/invariants
-      '@deepseek-ai/dsh-system-prompt':
-        specifier: workspace:^
-        version: link:../../core/system-prompt
-      '@deepseek-ai/dsh-tools':
-        specifier: workspace:^
-        version: link:../../core/tools
-
   packages/extensions/ssh:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -4348,7 +4329,7 @@ importers:
         specifier: workspace:^
         version: link:../../core/tools
 
-  packages/subagent/subagent-ssh:
+  packages/extensions/status:
     dependencies:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
@@ -4357,18 +4338,15 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-subagent':
-        specifier: workspace:^
-        version: link:../subagent
-      '@deepseek-ai/dsh-subagent-in-process-driver':
-        specifier: workspace:^
-        version: link:../subagent-in-process-driver
-      '@deepseek-ai/dsh-subprocess':
-        specifier: workspace:^
-        version: link:../../subprocess/subprocess
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:^
+        version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:^
+        version: link:../../core/tools
 
   packages/extensions/tool-cordis:
     devDependencies:
@@ -7799,6 +7777,22 @@ importers:
       '@deepseek-ai/dsh-tool-subagent':
         specifier: workspace:^
         version: link:../tool-subagent
+
+  packages/subagent/subagent-ssh:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-subagent':
+        specifier: workspace:^
+        version: link:../subagent
+      '@deepseek-ai/dsh-subprocess':
+        specifier: workspace:^
+        version: link:../../subprocess/subprocess
 
   packages/subagent/tool-subagent:
     dependencies:
