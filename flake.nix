@@ -92,13 +92,28 @@
             # Fetcher version 4 stores the v11 index as SQL text because the
             # binary form is not reproducible (nixpkgs#522703); rebuild the
             # index file pnpm reads.
+            # The fetcher ships the store read-only (directories 555, files
+            # 444), so make it writable before writing the rebuilt index.
+            chmod -R u+w $TMPDIR/store
             if [ -f $TMPDIR/store/v11/index.db.sql ]; then
               sqlite3 $TMPDIR/store/v11/index.db < $TMPDIR/store/v11/index.db.sql
             fi
-            chmod -R u+w $TMPDIR/store
             export PATH="$PWD/node_modules/.bin:$PATH"
             export CI=true
-            pnpm config set store-dir $TMPDIR/store --global
+            # package.json pins pnpm 11.7.0 while nixpkgs provides a newer one,
+            # so pnpm tries to download the pinned release; there is no network
+            # here. Ignore the mismatch and run the provided pnpm, exactly as
+            # the deps fetcher does when it populates the store.
+            export pnpm_config_pm_on_fail=ignore
+            # The nixpkgs node ships corepack shims named `pnpm`, which shadow
+            # pkgs.pnpm on PATH and try to download the pinned 11.7.0 release.
+            # Call the provided pnpm by absolute path instead.
+            export PNPM_BIN=${pkgs.pnpm}/bin/pnpm
+            # package.json pins pnpm 11.7.0; corepack honours that field by
+            # downloading the release, which needs a network this build has no
+            # access to. Ignore the pin and use the provided pnpm.
+            export COREPACK_ENABLE_PROJECT_SPEC=0
+            "$PNPM_BIN" config set store-dir $TMPDIR/store --global
             # minimumReleaseAge needs registry metadata; offline there is no
             # network, so every entry "fails" the age check. The lockfile was
             # already policy-checked during the online deps build. The
@@ -106,7 +121,7 @@
             # so neutralise it there.
             grep -q '^minimumReleaseAge:' pnpm-workspace.yaml || \
               echo 'minimumReleaseAge: 0' >> pnpm-workspace.yaml
-            pnpm install --frozen-lockfile --offline
+            "$PNPM_BIN" install --frozen-lockfile --offline
           '';
 
           buildPhase = ''
@@ -119,7 +134,7 @@
             # invocation.ts only needs npm_execpath to find pnpm for any
             # nested `pnpm <cmd>` calls - resolve it to the nixpkgs pnpm the
             # store was fetched with.
-            export npm_execpath=$(readlink -f $(command -v pnpm))
+            export npm_execpath=$(readlink -f $PNPM_BIN)
             # The build revision stays available for diagnostics, while the
             # product surface names this deployment rather than upstream.
             export DSH_CLIENT_TITLE='Unsuspicious DSH'
