@@ -141,7 +141,7 @@
             ./node_modules/.bin/tsx scripts/build.ts
             # The web UI's dist is workspace knowledge: build the frontend
             # into apps/web/dist (dsh-web-app resolves it from there).
-            corepack pnpm run build:web
+            "$PNPM_BIN" run build:web
           '';
 
           installPhase = ''
