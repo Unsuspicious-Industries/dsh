@@ -66,7 +66,10 @@ export type WorkspaceDomainState = z.infer<typeof workspaceDomainState>
  */
 export const workspaceDomainSpec = defineDomain({
   name: 'workspace',
-  version: 2,
+  // 2 -> 3: projects are user-created state. The bump rejects every registry
+  // written by the path-derived bootstrap, so pre-rework folder records cannot
+  // come back; session logs are untouched by the version change.
+  version: 3,
   global: {
     schema: workspaceDomainState,
     initial: { initialized: false, workspaceIds: [], archivedSessionIds: [] },

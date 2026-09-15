@@ -17,7 +17,7 @@ import WorkspaceRegistry, {
 } from '../src/index.ts'
 import type { WorkspaceDomainState, WorkspaceRecord } from '../src/index.ts'
 
-const DOMAIN_VERSION = 2
+const DOMAIN_VERSION = 3
 
 const header = (id: string, cwd?: string, createdAt = 0): SessionHeader => ({
   version: 0,
@@ -199,53 +199,28 @@ describe('WorkspaceRegistry lifecycle and bootstrap', () => {
     expect(storedState(pool)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [] })
   })
 
-  it('bootstraps once from list headers only, in workspace/session createdAt order', async () => {
+  it('marks the registry initialized without inventing a project per session cwd', async () => {
     const older = await makeDir('older')
     const newer = await makeDir('newer')
-    const alias = join(base, 'older-link')
-    const plain = join(base, 'plain.txt')
-    await symlink(older, alias)
-    await writeFile(plain, 'not a directory')
     const missing = join(base, 'missing')
     const result = await harness({
       sessions: [
         header('older-first', older, 100),
         header('newer-only', newer, 500),
-        header('older-latest', alias, 300),
         header('no-cwd', undefined, 900),
         header('missing-dir', missing, 800),
-        header('plain-file', plain, 700),
       ],
     })
 
     expect(result.list).toHaveBeenCalledTimes(1)
-    expect(result.load).not.toHaveBeenCalled()
-    expect(result.inspect).not.toHaveBeenCalled()
-    expect(result.registry.list().map(workspace => workspace.path)).toEqual([newer, older])
-    expect(result.registry.list().map(workspace => workspace.sessionIds)).toEqual([
-      ['newer-only'],
-      ['older-latest', 'older-first'],
-    ])
+    // Sessions stay reachable in the flat list until the user places them:
+    // bootstrap creates no project and adopts no historical session.
+    expect(result.registry.list()).toEqual([])
     expect(storedState(result.pool)).toEqual({
       initialized: true,
-      workspaceIds: result.registry.list().map(workspace => workspace.id),
+      workspaceIds: [],
       archivedSessionIds: [],
     })
-  })
-
-  it('breaks equal bootstrap timestamps by session id and canonical path', async () => {
-    const first = await makeDir('tie-first')
-    const second = await makeDir('tie-second')
-    const result = await harness({
-      sessions: [
-        header('z-session', first, 100),
-        header('a-session', first, 100),
-        header('second-session', second, 100),
-      ],
-    })
-    expect(new Set(result.registry.list().map(workspace => workspace.path))).toEqual(new Set([first, second]))
-    expect(result.registry.list().find(workspace => workspace.path === first)!.sessionIds)
-      .toEqual(['a-session', 'z-session'])
   })
 
   it('does not rerun bootstrap for a genuinely initialized empty registry', async () => {
@@ -261,83 +236,63 @@ describe('WorkspaceRegistry lifecycle and bootstrap', () => {
     expect(storedState(pool)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [] })
   })
 
-  it('reuses partial records after a bootstrap record write fails', async () => {
-    const firstDir = await makeDir('partial-first')
-    const secondDir = await makeDir('partial-second')
-    const sessions = [header('first', firstDir, 200), header('second', secondDir, 100)]
-    const pool = new MemoryMediaPool()
-    await expect(harness({
-      pool,
-      sessions,
-      backend: selectiveFailureBackend(pool, { putAt: 2 }),
-    })).rejects.toThrow(/selected bootstrap put failure/)
-    expect(pool.media.get('workspace')!.tables.get('workspaces')!.size).toBe(1)
-    expect(pool.media.get('workspace')!.global).toBeNull()
-
-    const retried = await harness({ pool, sessions })
-    expect(retried.registry.list()).toHaveLength(2)
-    expect(pool.media.get('workspace')!.tables.get('workspaces')!.size).toBe(2)
-    expect(storedState(pool).initialized).toBe(true)
-  })
-
-  it('reuses durable order when the final initialized marker write fails', async () => {
-    const dir = await makeDir('marker-retry')
-    const sessions = [header('session', dir, 100)]
-    const pool = new MemoryMediaPool()
-    await expect(harness({
-      pool,
-      sessions,
-      backend: selectiveFailureBackend(pool, { globalAt: 2 }),
-    })).rejects.toThrow(/selected bootstrap marker failure/)
-    expect(storedState(pool)).toMatchObject({ initialized: false })
-    expect(storedState(pool).workspaceIds).toHaveLength(1)
-
-    const retried = await harness({ pool, sessions })
-    expect(retried.registry.list()).toHaveLength(1)
-    expect(pool.media.get('workspace')!.tables.get('workspaces')!.size).toBe(1)
-    expect(storedState(pool).initialized).toBe(true)
-  })
-
-  it('merges partial records and leaves an already-accounted cwd drift ungrouped', async () => {
-    const owned = await makeDir('partial-owned')
-    const prior = await makeDir('partial-prior')
-    const drifted = await makeDir('partial-drifted')
+  it('leaves existing projects, their membership, and their order untouched', async () => {
+    const owned = await makeDir('kept-owned')
+    const strayed = await makeDir('kept-strayed')
     const ownedId = WorkspaceId('00000000-0000-4000-8000-000000000010')
-    const priorId = WorkspaceId('00000000-0000-4000-8000-000000000011')
     const pool = storedPool(
-      [
-        [ownedId, record(owned, ['old'], '2026-07-24T00:00:00.000Z')],
-        [priorId, record(prior, ['drift'], '2026-07-23T00:00:00.000Z')],
-      ],
-      { initialized: false, workspaceIds: [] },
+      [[ownedId, record(owned, ['old'], '2026-07-24T00:00:00.000Z')]],
+      { initialized: false, workspaceIds: [ownedId] },
     )
     const result = await harness({
       pool,
-      sessions: [header('new', owned, 200), header('old', owned, 100), header('drift', drifted, 300)],
+      sessions: [header('old', owned, 100), header('new', owned, 200), header('stray', strayed, 300)],
     })
-    expect(result.registry.list().map(workspace => workspace.id)).toContain(ownedId)
-    expect(result.registry.get(ownedId)!.sessionIds).toEqual(['new', 'old'])
-    expect(result.registry.list().some(workspace => workspace.path === drifted)).toBe(false)
+
+    expect(result.registry.list().map(workspace => workspace.id)).toEqual([ownedId])
+    // Two sessions now share the project's cwd and a third sits in an unowned
+    // directory; bootstrap joins neither group to the project.
+    expect(result.registry.get(ownedId)!.sessionIds).toEqual(['old'])
+    expect(storedState(pool)).toEqual({
+      initialized: true,
+      workspaceIds: [ownedId],
+      archivedSessionIds: [],
+    })
   })
 
-  it('orders headerless partial records by prior order, then stable id', async () => {
-    const first = await makeDir('fallback-first')
-    const second = await makeDir('fallback-second')
-    const firstId = WorkspaceId('00000000-0000-4000-8000-000000000020')
-    const secondId = WorkspaceId('00000000-0000-4000-8000-000000000021')
-    const entries: Array<[string, WorkspaceRecord]> = [
-      [secondId, record(second, [], '2026-07-24T00:00:00.000Z')],
-      [firstId, record(first, [], '2026-07-24T00:00:00.000Z')],
-    ]
-    const prior = await harness({
-      pool: storedPool(entries, { initialized: false, workspaceIds: [secondId, firstId] }),
-    })
-    expect(prior.registry.list().map(workspace => workspace.id)).toEqual([secondId, firstId])
+  it('retries the initialized marker without rewriting project rows', async () => {
+    const dir = await makeDir('marker-retry')
+    const markerId = WorkspaceId('00000000-0000-4000-8000-000000000030')
+    const entries: Array<[string, WorkspaceRecord]> =
+      [[markerId, record(dir, ['session'], '2026-07-24T00:00:00.000Z')]]
+    const pool = storedPool(entries, { initialized: false, workspaceIds: [markerId] })
+    const sessions = [header('session', dir, 100)]
 
-    const byId = await harness({
-      pool: storedPool(entries, { initialized: false, workspaceIds: [] }),
+    await expect(harness({
+      pool,
+      sessions,
+      backend: selectiveFailureBackend(pool, { globalAt: 1 }),
+    })).rejects.toThrow(/selected bootstrap marker failure/)
+    expect(storedState(pool)).toMatchObject({ initialized: false, workspaceIds: [markerId] })
+
+    const retried = await harness({ pool, sessions })
+    expect(retried.registry.list().map(workspace => workspace.id)).toEqual([markerId])
+    expect(pool.media.get('workspace')!.tables.get('workspaces')!.size).toBe(1)
+    expect(storedState(pool)).toEqual({
+      initialized: true,
+      workspaceIds: [markerId],
+      archivedSessionIds: [],
     })
-    expect(byId.registry.list().map(workspace => workspace.id)).toEqual([firstId, secondId])
+  })
+
+  it('refuses a registry written before projects became user-created state', async () => {
+    const pool = new MemoryMediaPool()
+    pool.versions.set('workspace', 2)
+    pool.media.set('workspace', {
+      tables: new Map([['workspaces', new Map()]]),
+      global: { initialized: true, workspaceIds: [], archivedSessionIds: [] },
+    })
+    await expect(harness({ pool })).rejects.toThrow(/stamped v2/)
   })
 
   it('closes its domain on disposal and reloads the persisted stable order', async () => {
@@ -876,13 +831,15 @@ describe('registry-global session archive', () => {
   it('archives durably in order, idempotently skips repeats, and leaves accounting untouched', async () => {
     const dir = await makeDir('archive-home')
     const result = await harness({ sessions: [header('kept', dir, 100), header('gone', dir, 200)] })
-    const workspace = result.registry.list()[0]!
+    // Projects are user-created: create one explicitly, then prove the archive
+    // write touches neither the project row nor its membership.
+    const workspace = await result.registry.create(dir)
+    expect(workspace.sessionIds).toEqual([])
     expect(result.registry.archivedSessionIds).toEqual([])
 
     await result.registry.archiveSession(SessionId('gone'))
     expect(result.registry.archivedSessionIds).toEqual(['gone'])
-    // Archiving is a display-set write: the workspace account keeps the id.
-    expect(workspace.sessionIds).toContain('gone')
+    expect(result.registry.get(workspace.id)!.sessionIds).toEqual([])
     expect(storedState(result.pool).archivedSessionIds).toEqual(['gone'])
     const changesAfterFirst = result.changes.filter(change => change.table === '').length
 

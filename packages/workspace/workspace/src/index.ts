@@ -70,17 +70,8 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-interface BootstrapGroup {
-  readonly path: string
-  readonly headers: SessionHeader[]
-  readonly newestAt: number
-}
-
 const sameIds = (left: readonly WorkspaceId[], right: readonly WorkspaceId[]): boolean =>
   left.length === right.length && left.every((id, index) => id === right[index])
-
-const compareHeaders = (left: SessionHeader, right: SessionHeader): number =>
-  right.createdAt - left.createdAt || String(left.id).localeCompare(String(right.id))
 
 /**
  * Durable workspace registry. Startup waits for `sessionPersistence`, builds
@@ -128,7 +119,7 @@ export class WorkspaceRegistry extends Service {
     if (!this.state.initialized) {
       const headers = await this.ctx.sessionPersistence.list()
       await this.replaceHeaderIndex(headers)
-      await this.bootstrap(headers)
+      await this.bootstrap()
     } else if (this.table.size > 0) {
       await this.replaceHeaderIndex(await this.ctx.sessionPersistence.list())
     }
@@ -454,88 +445,21 @@ export class WorkspaceRegistry extends Service {
     })
   }
 
-  private async bootstrap(headers: readonly SessionHeader[]): Promise<void> {
-    const table = this.requireTable()
+  /**
+   * First-run marker. This used to invent one project per session `cwd`, which
+   * littered the browser with a section for every directory a session had ever
+   * started in. Projects are explicit user state now, so bootstrap only marks
+   * the registry initialized: order and membership stay untouched. A historical
+   * session that belongs to no project shows in the flat list until the user
+   * places it, and is never adopted behind their back.
+   */
+  private async bootstrap(): Promise<void> {
     const state = this.requireState()
-    const groupsByPath = new Map<string, SessionHeader[]>()
-    for (const header of headers) {
-      const path = this.sessionPaths.get(header.id)
-      if (path === undefined) continue
-      const group = groupsByPath.get(path)
-      if (group === undefined) groupsByPath.set(path, [header])
-      else group.push(header)
-    }
-    const groups: BootstrapGroup[] = [...groupsByPath].map(([path, groupHeaders]) => {
-      groupHeaders.sort(compareHeaders)
-      const newest = groupHeaders[0] as SessionHeader
-      return { path, headers: groupHeaders, newestAt: newest.createdAt }
-    }).sort((left, right) =>
-      right.newestAt - left.newestAt || left.path.localeCompare(right.path))
-
-    const byPath = new Map<string, WorkspaceId>()
-    const accounted = new Map<SessionId, WorkspaceId>()
-    for (const [id, record] of table.entries()) {
-      byPath.set(record.path, id)
-      for (const sessionId of record.sessionIds) accounted.set(sessionId, id)
-    }
-
-    for (const group of groups) {
-      let id = byPath.get(group.path)
-      if (id === undefined) {
-        const sessionIds = group.headers
-          .map(header => header.id)
-          .filter(sessionId => !accounted.has(sessionId))
-        if (sessionIds.length === 0) continue
-        id = WorkspaceId(randomUUID())
-        const createdAt = new Date(group.newestAt).toISOString()
-        const record: WorkspaceRecord = {
-          path: group.path,
-          title: basename(group.path),
-          sessionIds,
-          createdAt,
-          updatedAt: createdAt,
-        }
-        await table.put(id, record)
-        byPath.set(group.path, id)
-        for (const sessionId of sessionIds) accounted.set(sessionId, id)
-        continue
-      }
-
-      const current = table.get(id) as WorkspaceRecord
-      const historical = group.headers
-        .map(header => header.id)
-        .filter(sessionId => accounted.get(sessionId) === undefined || accounted.get(sessionId) === id)
-      const historicalSet = new Set(historical)
-      const sessionIds = [
-        ...historical,
-        ...current.sessionIds.filter(sessionId => !historicalSet.has(sessionId)),
-      ]
-      if (sameSessionIds(current.sessionIds, sessionIds)) continue
-      await table.update(id, record => ({
-        ...record,
-        sessionIds,
-        updatedAt: new Date().toISOString(),
-      }))
-      for (const sessionId of historical) accounted.set(sessionId, id)
-    }
-
-    const groupRank = new Map(groups.map(group => [group.path, group.newestAt]))
-    const priorRank = new Map(state.workspaceIds.map((id, index) => [id, index]))
-    const workspaceIds = [...table.entries()]
-      .sort(([leftId, left], [rightId, right]) => {
-        const leftTime = groupRank.get(left.path) ?? Date.parse(left.createdAt)
-        const rightTime = groupRank.get(right.path) ?? Date.parse(right.createdAt)
-        return rightTime - leftTime
-          || (priorRank.get(leftId) ?? Number.MAX_SAFE_INTEGER)
-            - (priorRank.get(rightId) ?? Number.MAX_SAFE_INTEGER)
-          || String(leftId).localeCompare(String(rightId))
-      })
-      .map(([id]) => id)
-
-    if (!sameIds(state.workspaceIds, workspaceIds)) {
-      await this.setState({ initialized: false, workspaceIds, archivedSessionIds: state.archivedSessionIds })
-    }
-    await this.setState({ initialized: true, workspaceIds, archivedSessionIds: state.archivedSessionIds })
+    await this.setState({
+      initialized: true,
+      workspaceIds: state.workspaceIds,
+      archivedSessionIds: state.archivedSessionIds,
+    })
   }
 
   private validateStoredState(state: WorkspaceDomainState): void {
@@ -688,7 +612,5 @@ export class WorkspaceRegistry extends Service {
   }
 }
 
-const sameSessionIds = (left: readonly SessionId[], right: readonly SessionId[]): boolean =>
-  left.length === right.length && left.every((id, index) => id === right[index])
 
 export default WorkspaceRegistry
