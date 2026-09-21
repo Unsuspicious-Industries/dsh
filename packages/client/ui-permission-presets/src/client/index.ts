@@ -31,7 +31,7 @@ import {
   accessEn, accessZh, en, zh,
 } from './locales.ts'
 import {
-  displayPermissionPreset, FULL_ACCESS_PRESET,
+  displayPresetName, FULL_ACCESS_PRESET,
 } from './presentation.ts'
 import { PermissionPresetSettingsController } from './settings-store.ts'
 
@@ -56,7 +56,7 @@ function optionsOf(value: PermissionSelect, t: (key: string) => string): SelectO
     .filter(option => option.value !== 'custom')
     .map(option => ({
       id: option.value,
-      label: displayPermissionPreset(option.value, option.name),
+      label: displayPresetName(option.name),
       ...(option.description !== undefined ? { detail: option.description } : {}),
       ...(option.value === value.currentValue ? { active: true } : {}),
       ...(option.value === FULL_ACCESS_PRESET

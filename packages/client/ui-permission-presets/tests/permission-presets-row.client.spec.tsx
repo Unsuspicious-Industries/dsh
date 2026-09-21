@@ -94,7 +94,7 @@ describe('PermissionRow', () => {
     expect(mutate).toHaveBeenCalledOnce()
   })
 
-  it('requires explicit acknowledgement before saving Full access', async () => {
+  it('requires explicit acknowledgement before saving Root', async () => {
     const mutate = vi.fn(() => Promise.resolve(ok(view('danger-full-access', 1))))
     const controller = derivedController({
       settings: {
@@ -104,14 +104,14 @@ describe('PermissionRow', () => {
     })
     mount(controller)
     fireEvent.click(await screen.findByRole('button', { name: 'Read Only' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Full access' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Danger Full Access' }))
     expect(mutate).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(screen.queryByRole('dialog', { name: 'Enable Full access?' })).toBeNull()
+    expect(screen.queryByRole('dialog', { name: 'Switch to Root?' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Read Only' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Full access' }))
-    const dialog = screen.getByRole('dialog', { name: 'Enable Full access?' })
-    const enable = screen.getByRole('button', { name: 'Enable Full access' })
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Danger Full Access' }))
+    const dialog = screen.getByRole('dialog', { name: 'Switch to Root?' })
+    const enable = screen.getByRole('button', { name: 'Enable Root' })
     expect((enable as HTMLButtonElement).disabled).toBe(true)
     fireEvent.click(screen.getByRole('checkbox'))
     fireEvent.click(enable)
