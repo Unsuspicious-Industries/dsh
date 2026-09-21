@@ -14,7 +14,14 @@ import { WorkspaceBrowser } from '../src/client/WorkspaceBrowser.tsx'
 import { zh } from '../src/client/locales.ts'
 
 afterEach(cleanup)
-beforeEach(() => { localStorage.clear(); createWorkspaceViewStore().create().actions.setOrderBy('manual') })
+// The grouped browser is this suite's default subject; the flat default is
+// exercised by the dedicated flat-list cases, which select it themselves.
+beforeEach(() => {
+  localStorage.clear()
+  const store = createWorkspaceViewStore().create()
+  store.actions.setOrderBy('manual')
+  store.actions.setGroupBy('workspace')
+})
 
 // The seat's key domain is workspace ∪ common; the stub mirrors the real
 // lookup chain (namespace, then common vocabulary, then the key).
