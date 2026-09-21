@@ -33,6 +33,12 @@ export interface ActivationTerminal {
   readonly stopReason: SubagentResult['stopReason']
   /** The epoch's final assistant content, absent when it produced none or failed. */
   readonly output?: ContentBlock[]
+  /**
+   * Why the epoch failed, when it did. `stopReason` alone names only the class
+   * of ending, so a parent told its child failed would otherwise have no way to
+   * learn what went wrong; the settlement notice renders this text.
+   */
+  readonly failure?: string
 }
 
 /**
@@ -190,7 +196,7 @@ export function createActivationObserver(
   // output: an answer this harness could not durably release is not a result.
   const terminal = (failure: unknown): ActivationTerminal => failure === undefined
     ? captured
-    : { stopReason: 'error' }
+    : { stopReason: 'error', failure: describeFailure(failure) }
   return {
     start: (child: Agent): void => {
       boundary = child.session.events.length
@@ -214,6 +220,19 @@ export function createActivationObserver(
       }, parent)
     },
   }
+}
+
+/**
+ * Render one teardown or durability failure as text a parent can act on.
+ *
+ * `stopReason: 'error'` names only the class of ending, so the settlement
+ * notice must carry the cause itself; without it a parent learns its child
+ * failed but not why, which is indistinguishable from learning nothing.
+ * @param failure - the thrown value, which need not be an `Error`.
+ * @returns the error's message when it has one, else the value's string form.
+ */
+function describeFailure(failure: unknown): string {
+  return failure instanceof Error ? failure.message : String(failure)
 }
 
 /**

@@ -1939,9 +1939,37 @@ describe('continuable settlement delivery', () => {
 
     await waitNoActivation(ctx, started.childId)
     await vi.waitFor(() => { expect(settlementNotices(parent)).toHaveLength(1) })
-    expect(settlementNotices(parent)[0]!.text).toBe(
-      `Background subagent ${started.childId} failed before it finished.\nIt left no closing message.`,
-    )
+    // The parent must learn why the child failed, not only that it did: a bare
+    // "failed before it finished" reads the same for every cause and leaves the
+    // parent nothing to act on.
+    const notice = settlementNotices(parent)[0]!.text
+    expect(notice).toContain('failed before it finished.')
+    expect(notice).toContain('scope unwind failed')
+    expect(notice).toContain('It left no closing message.')
+  })
+
+  it('reports a cause that is not an Error', async () => {
+    const { ctx, parent } = await setup([textResponse('the answer'), textResponse('parent ack')])
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    const manager = (ctx.subagents as unknown as {
+      continuations: { activations: Map<SessionId, { handle: { dispose(): Promise<void> } }> }
+    }).continuations
+    const activation = await vi.waitFor(() => {
+      const live = manager.activations.get(started.childId)
+      expect(live).toBeDefined()
+      return live!
+    })
+    const dispose = activation.handle.dispose.bind(activation.handle)
+    activation.handle.dispose = async () => {
+      await dispose()
+      // A rejected promise can carry any value, and the notice must still name
+      // it rather than reporting an anonymous failure.
+      throw 'quota exhausted'
+    }
+
+    await waitNoActivation(ctx, started.childId)
+    await vi.waitFor(() => { expect(settlementNotices(parent)).toHaveLength(1) })
+    expect(settlementNotices(parent)[0]!.text).toContain('quota exhausted')
   })
 
   it('gives an idle parent one ordinary turn on the notice', async () => {

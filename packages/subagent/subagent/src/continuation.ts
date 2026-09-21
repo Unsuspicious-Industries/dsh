@@ -49,7 +49,7 @@ import {
 import type { DelegatedPolicyOverrides } from './child-agent.ts'
 import { assertSubagentMaxDepth } from './depth.ts'
 import { seedDescriptorTurn } from './descriptor-seed.ts'
-import type { ContinuableCreateRequest, ContinuableCreateSpec, SubagentResult, SubagentStartRequest } from './types.ts'
+import type { ContinuableCreateRequest, ContinuableCreateSpec, SubagentStartRequest } from './types.ts'
 import type { ActivationObserver, ActivationTerminal } from './lifecycle.ts'
 import { SubagentError } from './error.ts'
 import type SubagentActivationSetupRegistry from './activation-setup-registry.ts'
@@ -294,8 +294,9 @@ function disposalOf(activation: Activation): Promise<void> | undefined {
  * @param stopReason - how the child's last ordinary turn ended.
  * @returns the model-facing opening line of the settlement notice.
  */
-function settlementSummary(childId: SessionId, stopReason: SubagentResult['stopReason']): string {
+function settlementSummary(childId: SessionId, terminal: ActivationTerminal): string {
   const subject = `Background subagent ${childId}`
+  const stopReason = terminal.stopReason
   switch (stopReason) {
     case 'completed':
       return `${subject} finished and will do no further work unless you send it more.`
@@ -307,8 +308,12 @@ function settlementSummary(childId: SessionId, stopReason: SubagentResult['stopR
     // the child had claimed, so the parent must not treat the task as done.
     case 'refusal':
       return `${subject} declined the task.`
-    case 'error':
-      return `${subject} failed before it finished.`
+    case 'error': {
+      // The cause is the only part a parent can act on, so it is reported
+      // rather than summarized away into the bare class of ending.
+      const opening = `${subject} failed before it finished.`
+      return terminal.failure === undefined ? opening : `${opening} Cause: ${terminal.failure}`
+    }
     /* v8 ignore next 4 -- `SubagentResult['stopReason']` is merge-extensible, so this arm
      * needs a backend that adds a variant; an unnameable ending is reported as unfinished
      * rather than silently as success. */
@@ -1464,7 +1469,7 @@ export class SubagentContinuationManager {
     try {
       const parent = this.ctx.agents.get(activation.parentSession)
       if (parent === undefined) return
-      const summary = settlementSummary(activation.childId, terminal.stopReason)
+      const summary = settlementSummary(activation.childId, terminal)
       const message = createUserMessage({
         content: [
           { type: 'text' as const, text: summary },
