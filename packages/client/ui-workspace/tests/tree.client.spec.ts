@@ -3,7 +3,7 @@ import type {
   SessionId, SessionListState, SessionSummary, WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import {
-  deriveFlat, deriveGroups, deriveSearchResults, workspaceLabel, relativeTime,
+  deriveFlat, deriveGroups, deriveSearchResults, relativeTime,
   UNGROUPED_KEY, UNGROUPED_LABEL,
 } from '../src/client/tree.ts'
 import { createWorkspaceViewStore } from '../src/client/stores.ts'
@@ -322,7 +322,7 @@ describe('deriveSearchResults', () => {
         {
           id: contentHit.id,
           title: 'content-hit',
-          workspace: 'c',
+          workspace: UNGROUPED_LABEL,
           running: false,
           runningSubagentCount: 0,
           completed: false,
@@ -427,13 +427,23 @@ describe('createWorkspaceViewStore', () => {
   })
 })
 
-describe('workspaceLabel', () => {
-  it('uses the Ungrouped fallback and extracts POSIX and Windows basenames', () => {
-    expect(workspaceLabel(undefined)).toBe(UNGROUPED_LABEL)
-    expect(workspaceLabel('')).toBe(UNGROUPED_LABEL)
-    expect(workspaceLabel('/projects/demo/')).toBe('demo')
-    expect(workspaceLabel('C:\\projects\\demo\\')).toBe('demo')
-    expect(workspaceLabel('/')).toBe('/')
+describe('search result project labels', () => {
+  it('labels a session outside every project as Ungrouped instead of its directory basename', () => {
+    const loose = summary('loose', 10, '/root/server-work')
+    const owned = summary('owned', 20, '/projects/demo')
+    owned.displayTitle = 'needle owned'
+    loose.displayTitle = 'needle loose'
+    const result = deriveSearchResults(
+      list(loose, owned),
+      [workspace('demo', ['owned'], 'Demo Project')],
+      'needle',
+      noArchive,
+      { items: [], hasMore: false },
+      10,
+    )
+    const byId = new Map(result.items.map(item => [item.id as string, item]))
+    expect(byId.get('owned')?.workspace).toBe('Demo Project')
+    expect(byId.get('loose')?.workspace).toBe(UNGROUPED_LABEL)
   })
 })
 

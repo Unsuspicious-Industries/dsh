@@ -91,18 +91,6 @@ interface Group {
   sessions: SessionSummary[]
 }
 
-/**
- * Directory display label: basename of the path (both separators accepted).
- * Ungrouped-bucket fallback for surfaces without a workspace title.
- * @param cwd - directory path, or undefined for the ungrouped bucket.
- * @returns basename, the raw cwd when it has no basename, or the ungrouped label.
- */
-export function workspaceLabel(cwd: string | undefined): string {
-  if (cwd === undefined || cwd === '') return UNGROUPED_LABEL
-  const base = cwd.replace(/[/\\]+$/, '').split(/[/\\]/).pop()
-  return base !== undefined && base !== '' ? base : cwd
-}
-
 /** Recency comparator: newest first, id as the deterministic tiebreak (ids are unique per group). */
 function byRecency(a: SessionSummary, b: SessionSummary): number {
   if (b.updatedAt !== a.updatedAt) return b.updatedAt - a.updatedAt
@@ -338,7 +326,7 @@ export function deriveSearchResults(
     }
   }
   const labelOf = (summary: SessionSummary): string =>
-    workspaceBySession.get(summary.id) ?? workspaceLabel(summary.cwd)
+    workspaceBySession.get(summary.id) ?? UNGROUPED_LABEL
   const contentBySession = new Map<SessionId, SessionSearchResultItem>()
   for (const item of content.items) {
     if (!contentBySession.has(item.sessionId)) contentBySession.set(item.sessionId, item)
